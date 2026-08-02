@@ -1,8 +1,13 @@
-### v0.4.0 — new game: Kiss Marry Kill + always-on leaderboard
+### v0.5.0 — German language + settings overhaul
 
-- 🎭 **New party game: Kiss Marry Kill** — one player secretly tags three (in)famous people **Kiss / Marry / Kill**; everyone else predicts how they tagged them. Read someone right and you score; being *readable* pays off too. Lobby pack-vote, four name packs (historical, fiction, famous, mix). **14 games now.**
-- 🏆 **Leaderboard reworked** — it now **always** shows the current live standings (no more "no session"), and **auto-saves to the SD card** the moment you open it. The manual "save session" is gone — your results are simply always there.
-- 💾 Scores are also written to SD **when a player drops out**, so a mid-game roster change never loses the standings.
+- 🌍 **Play in German** — a language switch in Settings (English / Deutsch). All six content games are fully translated (Trivia, Would You Rather, Spectrum, Kiss Marry Kill, Word Scramble, Draw). Pick a language once and the host streams it to every phone, falling back to English per game where a language has none.
+- 🔤 **UTF-8-safe games** — Word Scramble and Draw now handle accented letters and ß correctly (an upstream fix, vendored in).
+- 💾 **Settings on the SD card** — SSID, audio and language survive a reboot and even a full-chip reflash (they weren't persisted before).
+- 🎛️ **Redesigned settings screen** — values sit in pills that turn orange when editable, off/low/high and on/off as option pills, a language switch with `‹ ›` arrows, and `,`/`/` to change a value in place.
+- 🎨 **New look** — the host screen matches the phone client's black / orange / white palette.
+- 🎮 **The default network** carries a game-pad icon so it stands out in the Wi-Fi list.
+
+Same fourteen games as v0.4.
 
 ### Install
 
