@@ -22,6 +22,33 @@ which runs the same games as a Flipper Zero app.
 
 If you have a Flipper, use upstream — it is the original and it is excellent.
 
+## Screenshots
+
+**Phone game client** — the web app your guests open in the browser: pick a nickname and an emoji avatar, then play. Same client for every game.
+
+<p align="center">
+  <img src="docs/img/web-landing.png" alt="Landing: nickname and emoji avatar picker" width="19%">
+  <img src="docs/img/web-trivia.png" alt="Trivia: A/B/C/D tiles with a collapsible leaderboard" width="19%">
+  <img src="docs/img/web-wyr.gif" alt="Would You Rather: live A/B vote split" width="19%">
+  <img src="docs/img/web-scramble.png" alt="Word Scramble: unscramble the letters" width="19%">
+  <img src="docs/img/web-kmk.gif" alt="Kiss Marry Kill: tag three people, everyone predicts" width="19%">
+</p>
+<p align="center">
+  <img src="docs/img/web-spectrum.gif" alt="Spectrum: a clue points at a hidden target on a dial" width="19%">
+  <img src="docs/img/web-draw.gif" alt="Draw and Guess" width="19%">
+  <img src="docs/img/web-guesscolor.gif" alt="Guess the Color: dial in the RGB" width="19%">
+  <img src="docs/img/web-connect4.png" alt="Connect Four" width="19%">
+  <img src="docs/img/web-battleship.gif" alt="Battleship" width="19%">
+</p>
+
+**On the Cardputer** — the host screen (rendered): the live dashboard, the game picker, and the settings screen with the per-device language switch.
+
+<p align="center">
+  <img src="docs/img/cardputer-dashboard.svg" alt="Cardputer dashboard: SSID, join URL, live 2-column scoreboard" width="31%">
+  <img src="docs/img/cardputer-games.svg" alt="Cardputer game picker with the active game marked" width="31%">
+  <img src="docs/img/cardputer-settings.svg" alt="Cardputer settings: audio, language switch, access point" width="31%">
+</p>
+
 ## Install
 
 **Easiest install** (Recommended): The app is in the "M5Burner" catalog and in "Launcher's" catalog. Search for "Hotspot Arcade".
@@ -63,11 +90,7 @@ external antenna.
 ## Using it
 
 The AP comes up at boot; there is no start step. Phones join **Hotspot Arcade** (open)
-and land on `http://192.168.4.1` (if not automatically getting there via captive portal)
-
-<p align="center">
-  <img src="docs/img/photo-1.jpg" alt="The Cardputer dashboard: SSID, AP state, active game, player count and key hints" width="700">
-</p>
+and land on `http://192.168.4.1` (if not automatically getting there via captive portal).
 
 The dashboard is the host view: SSID and IP, whether the AP is up, the active game,
 the live scoreboard, and the last event. Everything else is one key away.
@@ -85,13 +108,10 @@ the live scoreboard, and the last event. Everything else is one key away.
 
 Serial at 115200 prints the AP address, asset counts and free heap at boot.
 
-Games: trivia, would-you-rather, word scramble, spectrum, reaction duel, connect four,
-tic-tac-toe, dots & boxes, reversi, drawing, pong, guess the color, battleship. All of
-them are phone-driven; the host picks which one is live and watches.
-
-<p align="center">
-  <img src="docs/img/photo-3.jpg" alt="The game picker with all the games; the active one is marked" width="700">
-</p>
+Games: trivia, would-you-rather, word scramble, spectrum, kiss marry kill, reaction duel,
+connect four, tic-tac-toe, dots & boxes, reversi, drawing, pong, guess the color,
+battleship — fourteen in all. Every one is phone-driven; the host picks which is live and
+watches.
 
 ## Build
 

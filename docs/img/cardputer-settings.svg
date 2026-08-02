@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 135" width="480" height="270" font-family="'DejaVu Sans Mono','Courier New',monospace" shape-rendering="crispEdges">
+  <rect width="240" height="135" fill="#0B0B0C"/>
+
+  <!-- header -->
+  <rect x="0" y="0" width="240" height="12" fill="#FF8200"/>
+  <text x="3" y="9" font-size="8" fill="#0B0B0C" font-weight="bold">SETTINGS</text>
+
+  <!-- SSID: value pill (opens the editor) -->
+  <text x="4" y="29" font-size="8" fill="#F2F2EE">SSID</text>
+  <rect x="92" y="20" width="80" height="13" rx="2" fill="none" stroke="#2E2E33"/>
+  <text x="96" y="29" font-size="8" fill="#F2F2EE">Hotspot Arca</text>
+
+  <!-- Audio: off / low / high (low is current) -->
+  <text x="4" y="49" font-size="8" fill="#F2F2EE">Audio</text>
+  <rect x="92"  y="40" width="26" height="13" rx="2" fill="none" stroke="#2E2E33"/>
+  <text x="96"  y="49" font-size="8" fill="#5E5E5A">off</text>
+  <rect x="122" y="40" width="26" height="13" rx="2" fill="#2E2E33"/>
+  <text x="126" y="49" font-size="8" fill="#F2F2EE">low</text>
+  <rect x="152" y="40" width="32" height="13" rx="2" fill="none" stroke="#2E2E33"/>
+  <text x="156" y="49" font-size="8" fill="#5E5E5A">high</text>
+
+  <!-- Language: selected row -> orange, cycles with < > -->
+  <text x="4" y="69" font-size="8" fill="#FF8200">Language</text>
+  <text x="92" y="69" font-size="8" fill="#FF8200">&lt;</text>
+  <rect x="102" y="60" width="50" height="13" rx="2" fill="#FF8200"/>
+  <text x="106" y="69" font-size="8" fill="#0B0B0C">Deutsch</text>
+  <text x="156" y="69" font-size="8" fill="#FF8200">&gt;</text>
+
+  <!-- Access Point: on / off (on is current) -->
+  <text x="4" y="89" font-size="8" fill="#F2F2EE">Access Point</text>
+  <rect x="92"  y="80" width="20" height="13" rx="2" fill="#2E2E33"/>
+  <text x="96"  y="89" font-size="8" fill="#F2F2EE">on</text>
+  <rect x="116" y="80" width="26" height="13" rx="2" fill="none" stroke="#2E2E33"/>
+  <text x="120" y="89" font-size="8" fill="#5E5E5A">off</text>
+
+  <!-- Event log: opens a sub-screen -->
+  <text x="4" y="109" font-size="8" fill="#F2F2EE">Event log</text>
+  <rect x="92" y="100" width="36" height="13" rx="2" fill="none" stroke="#2E2E33"/>
+  <text x="96" y="109" font-size="8" fill="#F2F2EE">GO &gt;</text>
+
+  <!-- footer -->
+  <rect x="0" y="124" width="240" height="11" fill="#2E2E33"/>
+  <text x="3" y="132" font-size="8" fill="#F2F2EE">;/. move   ,// change   ENTER open</text>
+</svg>
