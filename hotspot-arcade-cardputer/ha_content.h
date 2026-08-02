@@ -94,12 +94,25 @@ static void haContentLoadPack(Engine& engine, uint8_t game, const char* text, co
     }
 }
 
-// Called once at boot. The generator already caps each game at the engine's
-// TRIVIA_MAX_TOPICS packs, so everything in ha_bundle.h fits.
-static void haContentLoadAll(Engine& engine) {
+// Stream the baked packs for one language into the engine. The generator caps each
+// game at the engine's TRIVIA_MAX_TOPICS packs PER LANGUAGE, and only one language is
+// ever loaded at a time, so the cap is never exceeded.
+//
+// Fallback is per game: a game whose selected language has no packs (an untranslated
+// game, or lang="en" which every game has) streams its English packs instead. So a
+// partially translated language still plays -- translated games come up localized,
+// the rest stay English. Called at boot and again whenever Settings changes language.
+static void haContentLoadAll(Engine& engine, const char* lang) {
     engine.contentClear();
+    bool hasLang[64] = {false}; // game id -> does the selected language cover it?
     for(size_t i = 0; i < HA_BAKED_PACK_COUNT; i++) {
         const HaBakedPack& bp = HA_BAKED_PACKS[i];
+        if(bp.game < 64 && strcmp(bp.lang, lang) == 0) hasLang[bp.game] = true;
+    }
+    for(size_t i = 0; i < HA_BAKED_PACK_COUNT; i++) {
+        const HaBakedPack& bp = HA_BAKED_PACKS[i];
+        const char* want = (bp.game < 64 && hasLang[bp.game]) ? lang : "en";
+        if(strcmp(bp.lang, want) != 0) continue;
         haContentLoadPack(engine, bp.game, bp.text, bp.fallback);
     }
 }

@@ -41,6 +41,12 @@
 // ---- host speaker: short jingles, respecting the audio level set in the UI ----
 // 0 = off, 1 = low, 2 = high. Stored here; the UI settings screen changes it.
 uint8_t haAudioLevel = 1;
+
+// Content language (see ha_ui.h): 0 English, 1 Deutsch. Persisted in NVS. The Settings
+// screen changes it and sets haLangDirty; loop() then re-streams the packs.
+uint8_t haLang = 0;
+bool haLangDirty = false;
+
 static void haBeep(uint16_t freq, uint16_t ms) {
     if(haAudioLevel == 0) return;
     M5Cardputer.Speaker.setVolume(haAudioLevel == 2 ? 200 : 80);
@@ -56,7 +62,11 @@ static DNSServer dnsServer;
 static AsyncWebServer server(80);
 static AsyncWebSocket ws("/ws");
 static IPAddress apIP(192, 168, 4, 1);
-static char apName[33] = "Hotspot Arcade";
+// A game-pad emoji in the default SSID makes the network jump out in a phone's Wi-Fi
+// list. SSIDs are UTF-8 up to 32 bytes; the emoji is 4, so this fits with room to
+// spare. (The host's own screen font has no emoji glyph, so it shows a placeholder
+// there -- cosmetic; the phones that matter render it fine.)
+static char apName[33] = "\xF0\x9F\x8E\xAE Hotspot Arcade";
 static bool portalRunning = false;
 
 static Engine engine;
@@ -264,6 +274,7 @@ void haHostRoundEnd() {
 
 void haHostApplySsid(const char* ssid) {
     strlcpy(apName, ssid, sizeof(apName));
+    haCfgSave();
     bool wasUp = portalRunning;
     if(wasUp) stopPortal();
     if(wasUp) startPortal();
@@ -308,6 +319,41 @@ static void haSdBegin() {
         Serial.println("[ha] SD: no card or mount failed");
 }
 
+// Settings (SSID, audio, language) live on the SD card next to the leaderboard, so
+// they survive not just a reboot but a full-chip reflash that wipes NVS. The card is
+// the durable store; NVS is only a fallback for a board with no SD. Format is plain
+// key=value the user can read or edit:  /hotspot-arcade/config.txt
+static const char* HA_CFG_PATH = "/hotspot-arcade/config.txt";
+
+void haCfgSave() { // non-static: the UI (ha_ui.h) calls it on every settings change
+    if(!haSdOk) return;
+    SD.mkdir("/hotspot-arcade");
+    SD.remove(HA_CFG_PATH); // truncate by removing first
+    File f = SD.open(HA_CFG_PATH, FILE_WRITE);
+    if(!f) return;
+    f.printf("ssid=%s\n", apName);
+    f.printf("audio=%u\n", (unsigned)haAudioLevel);
+    f.printf("lang=%u\n", (unsigned)haLang);
+    f.close();
+}
+
+static void haCfgLoad() { // overrides NVS/defaults when the card has a config
+    if(!haSdOk) return;
+    File f = SD.open(HA_CFG_PATH, FILE_READ);
+    if(!f) return;
+    while(f.available()) {
+        String line = f.readStringUntil('\n');
+        line.trim();
+        int eq = line.indexOf('=');
+        if(eq <= 0) continue;
+        String k = line.substring(0, eq), v = line.substring(eq + 1);
+        if(k == "ssid") { if(v.length()) strlcpy(apName, v.c_str(), sizeof(apName)); }
+        else if(k == "audio") { int a = v.toInt(); if(a >= 0 && a <= 2) haAudioLevel = (uint8_t)a; }
+        else if(k == "lang") { int l = v.toInt(); if(l >= 0 && l < HA_LANG_COUNT) haLang = (uint8_t)l; }
+    }
+    f.close();
+}
+
 void setup() {
     auto cfg = M5.config();
     M5Cardputer.begin(cfg, true);
@@ -326,10 +372,17 @@ void setup() {
     haUiBegin();
     installHandlers();
 
+    { // restore settings: NVS as a fallback, then the SD card (durable) overrides
+        Preferences p;
+        if(p.begin("ha_cfg", true)) { haLang = p.getUChar("lang", 0); p.end(); }
+        if(haLang >= HA_LANG_COUNT) haLang = 0;
+    }
+    haCfgLoad(); // SSID, audio and language off the SD card, if present
+
     ENGINE_LOCK();
     engine.reset();
     haHostReset();
-    haContentLoadAll(engine); // baked packs -> trivia topics, wyr/scramble/draw packs
+    haContentLoadAll(engine, HA_LANG_CODE[haLang]); // baked packs for the chosen language
     haHostLog("packs loaded");
     ENGINE_UNLOCK();
     Serial.printf(
@@ -345,6 +398,17 @@ void setup() {
 void loop() {
     M5Cardputer.update();
     haUiPumpKeys();
+
+    if(haLangDirty) { // Settings changed the language -> re-stream that language's packs
+        haLangDirty = false;
+        ENGINE_LOCK();
+        haContentLoadAll(engine, HA_LANG_CODE[haLang]);
+        ENGINE_UNLOCK();
+        // Restart the active game so the phones get the new language right away: a
+        // fresh lobby with the new pack names instead of waiting for the next round.
+        if(haHost.activeGame != HA_GAME_NONE) haHostSelectGame(haHost.activeGame);
+        haHostLog(haLang ? "language: Deutsch" : "language: English");
+    }
 
     if(portalRunning) {
         dnsServer.processNextRequest();

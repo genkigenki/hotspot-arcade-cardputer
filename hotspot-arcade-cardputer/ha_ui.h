@@ -7,6 +7,7 @@
 // is never blocked by the screen.
 #pragma once
 #include <M5Cardputer.h>
+#include <Preferences.h>
 #include "ha_host.h"
 
 // ---- implemented in the .ino (they touch the engine / WiFi under the lock) ----
@@ -15,6 +16,7 @@ void haHostResetScores();
 void haHostRoundEnd();
 void haHostApplySsid(const char* ssid);
 void haHostTogglePortal();
+void haCfgSave(); // persist SSID/audio/language to the SD card
 const char* haHostSsid();
 String haHostIp();
 void haHostSnapshot(HaHost& dst);
@@ -65,7 +67,18 @@ enum HaUiView {
 // Audio level (0 off / 1 low / 2 high) lives in the .ino (the speaker jingles are
 // there); the settings screen reads and cycles it.
 extern uint8_t haAudioLevel;
-#define HA_SET_COUNT 4 // settings rows: SSID, Audio, AP, Event log
+
+// Content language, selected once in Settings. The firmware bakes every language's
+// packs; the host streams only the selected one (English fallback per game). haLang
+// indexes the tables below; the .ino owns the variable, persists it, and re-streams
+// the packs when haLangDirty is set. Interface text stays English for now.
+extern uint8_t haLang;
+extern bool haLangDirty; // set by Settings; the .ino reloads packs and clears it
+#define HA_LANG_COUNT 2
+static const char* const HA_LANG_CODE[HA_LANG_COUNT] = {"en", "de"};
+static const char* const HA_LANG_NAME[HA_LANG_COUNT] = {"English", "Deutsch"};
+
+#define HA_SET_COUNT 5 // settings rows: SSID, Audio, Language, AP, Event log
 
 static M5Canvas haUiCanvas(&M5Cardputer.Display);
 static bool haUiSprite = false;
@@ -107,9 +120,15 @@ static void haUiBegin() {
 
 // ---- drawing ---------------------------------------------------------------
 
+// The phone client's palette is monochrome + one hot orange (#FF8200). Match it on
+// the host screen: orange is the single accent (title bar, selection, leader) on a
+// black field with white text. 0xFC00 is #FF8200 in RGB565. AP up/down stays
+// green/red -- that's a status, and the web uses the same good/bad colours.
+#define HA_ORANGE 0xFC00
+
 static void haUiHeader(lgfx::LovyanGFX* g, const char* title) {
-    g->fillRect(0, 0, HA_UI_W, 12, TFT_NAVY);
-    g->setTextColor(TFT_WHITE, TFT_NAVY);
+    g->fillRect(0, 0, HA_UI_W, 12, HA_ORANGE);
+    g->setTextColor(TFT_BLACK, HA_ORANGE);
     g->drawString(title, 3, 2);
     char bat[8];
     snprintf(bat, sizeof(bat), "%d%%", (int)M5Cardputer.Power.getBatteryLevel());
@@ -151,7 +170,7 @@ static void haUiDrawScoreCols(lgfx::LovyanGFX* g, uint8_t* order, int n, int top
         int x = col ? HA_UI_W / 2 + 4 : 3;
         int y = top + row * rowH;
         const HaHostPlayer& p = haUiSnap.p[order[i]];
-        g->setTextColor(i == 0 ? TFT_YELLOW : TFT_WHITE, TFT_BLACK);
+        g->setTextColor(i == 0 ? HA_ORANGE : TFT_WHITE, TFT_BLACK);
         char nk[10], cell[24];
         snprintf(nk, sizeof(nk), "%s", p.nick); // clip nick to ~9 chars per column
         snprintf(cell, sizeof(cell), "%d.%s:%ld", i + 1, nk, (long)p.score);
@@ -173,7 +192,7 @@ static void haUiDrawDash(lgfx::LovyanGFX* g) {
     // Line 2: active game + player count.
     uint8_t order[HA_MAX_PLAYERS + 1];
     int n = haUiSorted(order);
-    g->setTextColor(TFT_CYAN, TFT_BLACK);
+    g->setTextColor(TFT_WHITE, TFT_BLACK);
     snprintf(line, sizeof(line), "Game: %s   Players: %d", haUiGameLabel(haUiSnap.activeGame), n);
     g->drawString(line, 3, 27);
 
@@ -194,7 +213,7 @@ static void haUiDrawDash(lgfx::LovyanGFX* g) {
     if(haUiSnap.lastEvent[0]) {
         g->setTextFont(1);
         g->setTextSize(1);
-        g->setTextColor(TFT_YELLOW, TFT_BLACK);
+        g->setTextColor(HA_ORANGE, TFT_BLACK);
         g->drawString(haUiSnap.lastEvent, 3, HA_UI_H - 22);
     }
     haUiFooter(g, "G game   L board   S settings   E end");
@@ -245,14 +264,14 @@ static void haUiDrawGames(lgfx::LovyanGFX* g) {
         const HaGameItem& it = HA_UI_GAMES[haGamesOrder[i]];
         bool sel = (i == haUiCursor);
         bool live = (it.id == haUiSnap.activeGame);
-        if(sel) g->fillRect(0, y - 1, HA_UI_W, HA_GAMES_ROW, TFT_BLUE);
-        g->setTextColor(live ? TFT_GREEN : TFT_WHITE, sel ? TFT_BLUE : TFT_BLACK);
+        if(sel) g->fillRect(0, y - 1, HA_UI_W, HA_GAMES_ROW, HA_ORANGE);
+        g->setTextColor(sel ? TFT_BLACK : (live ? HA_ORANGE : TFT_WHITE), sel ? HA_ORANGE : TFT_BLACK);
         char nm[18];
         snprintf(nm, sizeof(nm), "%s%s", live ? "*" : "", it.label);
         g->drawString(nm, 3, y);
         if(it.duel) {
             g->setTextSize(1);
-            g->setTextColor(sel ? TFT_WHITE : TFT_ORANGE, sel ? TFT_BLUE : TFT_BLACK);
+            g->setTextColor(sel ? TFT_BLACK : HA_ORANGE, sel ? HA_ORANGE : TFT_BLACK);
             g->drawString("1v1", HA_UI_W - 22, y + 4);
             g->setTextSize(2);
         }
@@ -262,7 +281,7 @@ static void haUiDrawGames(lgfx::LovyanGFX* g) {
 
     // Selected game's one-line description.
     g->fillRect(0, descY - 2, HA_UI_W, 12, TFT_BLACK);
-    g->setTextColor(TFT_CYAN, TFT_BLACK);
+    g->setTextColor(TFT_LIGHTGREY, TFT_BLACK);
     g->drawString(HA_UI_GAMES[haGamesOrder[haUiCursor]].desc, 3, descY);
 
     haUiFooter(g, ";/. move  S sort  ENTER pick  ESC back");
@@ -288,26 +307,85 @@ static const char* haUiAudioName() {
     return haAudioLevel == 0 ? "off" : haAudioLevel == 1 ? "low" : "high";
 }
 
+// One option of a multi-choice setting (audio off/low/high, AP on/off). The current
+// choice is filled -- orange on the selected (editable) row, grey otherwise; the rest
+// are outlined. Returns the x just past the pill, so options tile left to right.
+static int haUiOptPill(lgfx::LovyanGFX* g, int x, int y, const char* txt, bool current, bool rowSel) {
+    int w = (int)g->textWidth(txt) + 8;
+    if(current) {
+        uint16_t bg = rowSel ? HA_ORANGE : TFT_DARKGREY;
+        g->fillRoundRect(x, y, w, 13, 2, bg);
+        g->setTextColor(rowSel ? TFT_BLACK : TFT_WHITE, bg);
+    } else {
+        g->drawRoundRect(x, y, w, 13, 2, TFT_DARKGREY);
+        g->setTextColor(TFT_DARKGREY, TFT_BLACK);
+    }
+    g->drawString(txt, x + 4, y + 3);
+    return x + w + 4;
+}
+
+// A single value pill (language, SSID, event-log). Orange fill on the selected row.
+// `arrows` frames it with < > (a cycle-able value like language) when it's selected.
+static void haUiValPill(lgfx::LovyanGFX* g, int x, int y, const char* txt, bool rowSel, bool arrows) {
+    int tx = x;
+    if(arrows && rowSel) {
+        g->setTextColor(HA_ORANGE, TFT_BLACK);
+        g->drawString("<", x, y + 3);
+        tx = x + 10;
+    }
+    int w = (int)g->textWidth(txt) + 8;
+    if(rowSel) {
+        g->fillRoundRect(tx, y, w, 13, 2, HA_ORANGE);
+        g->setTextColor(TFT_BLACK, HA_ORANGE);
+    } else {
+        g->drawRoundRect(tx, y, w, 13, 2, TFT_DARKGREY);
+        g->setTextColor(TFT_WHITE, TFT_BLACK);
+    }
+    g->drawString(txt, tx + 4, y + 3);
+    if(arrows && rowSel) {
+        g->setTextColor(HA_ORANGE, TFT_BLACK);
+        g->drawString(">", tx + w + 3, y + 3);
+    }
+}
+
 static void haUiDrawSettings(lgfx::LovyanGFX* g) {
     haUiHeader(g, "SETTINGS");
-    char l0[48], l1[24], l2[20];
-    snprintf(l0, sizeof(l0), "SSID: %s", haHostSsid());
-    snprintf(l1, sizeof(l1), "Audio: %s", haUiAudioName());
-    snprintf(l2, sizeof(l2), "AP: %s", haUiSnap.portalRunning ? "on" : "off");
-    const char* items[HA_SET_COUNT] = {l0, l1, l2, "Show event log"};
-
     g->setTextSize(1);
-    int y = 22;
+    const int VALX = 92, y0 = 20, rowH = 20;
+    const char* labels[HA_SET_COUNT] = {"SSID", "Audio", "Language", "Access Point", "Event log"};
     for(int i = 0; i < HA_SET_COUNT; i++) {
         bool sel = (i == haUiCursor);
-        if(sel) g->fillRect(0, y - 2, HA_UI_W, 13, TFT_BLUE);
-        g->setTextColor(TFT_WHITE, sel ? TFT_BLUE : TFT_BLACK);
-        char buf[40];
-        snprintf(buf, sizeof(buf), "%.38s", items[i]);
-        g->drawString(buf, 4, y);
-        y += 16;
+        int y = y0 + i * rowH;
+        g->setTextColor(sel ? HA_ORANGE : TFT_WHITE, TFT_BLACK);
+        g->drawString(labels[i], 4, y + 3);
+        int cx = VALX;
+        switch(i) {
+        case 0: { // SSID -- value shown; ENTER opens the text editor
+            char s[16];
+            snprintf(s, sizeof(s), "%.12s", haHostSsid());
+            haUiValPill(g, cx, y, s, sel, false);
+            break;
+        }
+        case 1: { // Audio -- off / low / high
+            const char* o[3] = {"off", "low", "high"};
+            for(int a = 0; a < 3; a++) cx = haUiOptPill(g, cx, y, o[a], haAudioLevel == a, sel);
+            break;
+        }
+        case 2: // Language -- one box, cycles with < >
+            haUiValPill(g, cx, y, HA_LANG_NAME[haLang % HA_LANG_COUNT], sel, true);
+            break;
+        case 3: { // Access Point -- on / off
+            bool up = haUiSnap.portalRunning;
+            cx = haUiOptPill(g, cx, y, "on", up, sel);
+            cx = haUiOptPill(g, cx, y, "off", !up, sel);
+            break;
+        }
+        case 4: // Event log -- opens a sub-screen
+            haUiValPill(g, cx, y, "GO >", sel, false);
+            break;
+        }
     }
-    haUiFooter(g, ";/. move   ENTER change   ESC back");
+    haUiFooter(g, ";/. move   ,// change   ENTER open   ESC back");
 }
 
 static void haUiDrawConsole(lgfx::LovyanGFX* g) {
@@ -316,7 +394,7 @@ static void haUiDrawConsole(lgfx::LovyanGFX* g) {
     uint32_t total = haUiSnap.evTotal;
     uint32_t have = total < HA_EV_MAX ? total : HA_EV_MAX;
     int y = 14;
-    g->setTextColor(TFT_GREEN, TFT_BLACK);
+    g->setTextColor(TFT_WHITE, TFT_BLACK);
     for(uint32_t i = 0; i < have && i < (uint32_t)rows; i++) {
         // newest first
         uint32_t idx = (total - 1 - i) % HA_EV_MAX;
@@ -403,6 +481,32 @@ static void haUiBack() {
         haUiOpen(HA_VIEW_DASH);
 }
 
+// Change the value of the selected settings row in place (the ,/ left-right keys).
+// SSID and Event log aren't values -- they open a screen on ENTER, so adjust skips them.
+static void haUiSettingAdjust(int dir) {
+    switch(haUiCursor) {
+    case 1: // Audio off/low/high
+        haAudioLevel = (uint8_t)((haAudioLevel + 3 + dir) % 3);
+        haCfgSave();
+        break;
+    case 2: // Language
+        haLang = (uint8_t)((haLang + HA_LANG_COUNT + dir) % HA_LANG_COUNT);
+        haLangDirty = true;
+        {
+            Preferences p; // NVS fallback for a board with no SD card
+            if(p.begin("ha_cfg", false)) { p.putUChar("lang", haLang); p.end(); }
+        }
+        haCfgSave();
+        break;
+    case 3: // Access Point on/off
+        haHostTogglePortal();
+        break;
+    default:
+        return;
+    }
+    haUiForce = true;
+}
+
 static void haUiChar(char c) {
     if(haUiView == HA_VIEW_SSID) {
         if(c == '`') { // esc -> back to settings
@@ -432,13 +536,15 @@ static void haUiChar(char c) {
         else if(haUiView == HA_VIEW_SETTINGS && haUiCursor < HA_SET_COUNT - 1) haUiCursor++;
         haUiForce = true;
         return;
-    case ',': // left = page up (whole screen)
+    case ',': // left: page up in the picker, or decrement a setting value
         if(haUiView == HA_VIEW_GAMES) haUiCursor = haUiCursor > 6 ? haUiCursor - 6 : 0;
+        else if(haUiView == HA_VIEW_SETTINGS) haUiSettingAdjust(-1);
         haUiForce = true;
         return;
-    case '/': // right = page down
+    case '/': // right: page down in the picker, or increment a setting value
         if(haUiView == HA_VIEW_GAMES)
             haUiCursor = haUiCursor + 6 < HA_UI_GAME_COUNT ? haUiCursor + 6 : HA_UI_GAME_COUNT - 1;
+        else if(haUiView == HA_VIEW_SETTINGS) haUiSettingAdjust(1);
         haUiForce = true;
         return;
     case 'g':
@@ -492,11 +598,21 @@ static void haUiEnter() {
             break;
         case 1: // Audio -> cycle off/low/high
             haAudioLevel = (uint8_t)((haAudioLevel + 1) % 3);
+            haCfgSave();
             break;
-        case 2: // AP -> toggle
+        case 2: // Language -> cycle, persist, and ask the .ino to re-stream packs
+            haLang = (uint8_t)((haLang + 1) % HA_LANG_COUNT);
+            haLangDirty = true;
+            {
+                Preferences p; // NVS fallback for a board with no SD card
+                if(p.begin("ha_cfg", false)) { p.putUChar("lang", haLang); p.end(); }
+            }
+            haCfgSave();
+            break;
+        case 3: // AP -> toggle
             haHostTogglePortal();
             break;
-        case 3: // Event log
+        case 4: // Event log
             haUiView = HA_VIEW_CONSOLE;
             break;
         }

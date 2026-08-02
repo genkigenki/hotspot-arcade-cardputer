@@ -52,22 +52,35 @@ const GAMES = [
   ['spectrum', 'HA_GAME_SPECTRUM'],
   ['kmk', 'HA_GAME_KMK'],
 ];
-const MAX_PER_GAME = 6;
+const MAX_PER_GAME = 6; // per game AND per language: only one language is ever pushed
+
+// Language packs. "en" is upstream's vendored content (never edited here); "de" and
+// any future language live in this fork's own packs-<lang>/ tree. The host bakes them
+// all and, at runtime, streams only the language the Settings screen selects (falling
+// back to English per game where a language has no packs). The engine's per-game pack
+// cap therefore applies per language, not across all languages.
+const LANGS = [
+  ['en', join(vendor, 'packs')],
+  ['de', join(root, 'packs-de')],
+];
 
 const packs = [];
 const dropped = [];
 for (const [sub, gameConst] of GAMES) {
-  const dir = join(vendor, 'packs', sub);
-  if (!existsSync(dir)) continue;
-  const names = readdirSync(dir).filter((n) => n.toLowerCase().endsWith('.txt')).sort();
-  for (const name of names.slice(0, MAX_PER_GAME)) {
-    packs.push({
-      gameConst,
-      fallback: name.slice(0, -4),
-      text: readFileSync(join(dir, name), 'utf8').replace(/\r\n/g, '\n'),
-    });
+  for (const [lang, base] of LANGS) {
+    const dir = join(base, sub);
+    if (!existsSync(dir)) continue;
+    const names = readdirSync(dir).filter((n) => n.toLowerCase().endsWith('.txt')).sort();
+    for (const name of names.slice(0, MAX_PER_GAME)) {
+      packs.push({
+        gameConst,
+        lang,
+        fallback: name.slice(0, -4),
+        text: readFileSync(join(dir, name), 'utf8').replace(/\r\n/g, '\n'),
+      });
+    }
+    for (const name of names.slice(MAX_PER_GAME)) dropped.push(`${lang}:${sub}/${name}`);
   }
-  for (const name of names.slice(MAX_PER_GAME)) dropped.push(`${sub}/${name}`);
 }
 
 const DELIM = 'HAPACK';
@@ -114,12 +127,13 @@ static const size_t HA_BAKED_FILE_COUNT = sizeof(HA_BAKED_FILES) / sizeof(HA_BAK
 
 struct HaBakedPack {
     uint8_t game;
+    const char* lang;     // "en", "de", ... -- the Settings language selects which stream
     const char* fallback; // pack name if the file has no "Pack:" line
     const char* text;
 };
 
 static const HaBakedPack HA_BAKED_PACKS[] = {
-${packs.map((p) => `    {${p.gameConst}, "${p.fallback}", R"${DELIM}(${p.text})${DELIM}"},`).join('\n')}
+${packs.map((p) => `    {${p.gameConst}, "${p.lang}", "${p.fallback}", R"${DELIM}(${p.text})${DELIM}"},`).join('\n')}
 };
 static const size_t HA_BAKED_PACK_COUNT = sizeof(HA_BAKED_PACKS) / sizeof(HA_BAKED_PACKS[0]);
 `;
