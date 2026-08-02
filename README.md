@@ -41,12 +41,12 @@ If you have a Flipper, use upstream — it is the original and it is excellent.
   <img src="docs/img/web-battleship.gif" alt="Battleship" width="19%">
 </p>
 
-**On the Cardputer** — the host screen (rendered): the live dashboard, the game picker, and the settings screen with the per-device language switch.
+**On the Cardputer** — the host's own screen (captured straight off the device): the live dashboard, the game picker, and the settings screen with the per-device language switch.
 
 <p align="center">
-  <img src="docs/img/cardputer-dashboard.svg" alt="Cardputer dashboard: SSID, join URL, live 2-column scoreboard" width="31%">
-  <img src="docs/img/cardputer-games.svg" alt="Cardputer game picker with the active game marked" width="31%">
-  <img src="docs/img/cardputer-settings.svg" alt="Cardputer settings: audio, language switch, access point" width="31%">
+  <img src="docs/img/cardputer-dashboard.png" alt="Cardputer dashboard: SSID, join URL, live 2-column scoreboard" width="31%">
+  <img src="docs/img/cardputer-games.png" alt="Cardputer game picker with the active game marked" width="31%">
+  <img src="docs/img/cardputer-settings.png" alt="Cardputer settings: audio, language switch, access point" width="31%">
 </p>
 
 ## Install

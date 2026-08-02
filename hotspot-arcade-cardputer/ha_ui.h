@@ -193,8 +193,11 @@ static void haUiDrawDash(lgfx::LovyanGFX* g) {
     uint8_t order[HA_MAX_PLAYERS + 1];
     int n = haUiSorted(order);
     g->setTextColor(TFT_WHITE, TFT_BLACK);
-    snprintf(line, sizeof(line), "Game: %s   Players: %d", haUiGameLabel(haUiSnap.activeGame), n);
+    snprintf(line, sizeof(line), "Game: %s", haUiGameLabel(haUiSnap.activeGame));
     g->drawString(line, 3, 27);
+    char pl[20]; // players pinned to the right edge so the two never crowd
+    snprintf(pl, sizeof(pl), "Players: %d", n);
+    g->drawString(pl, HA_UI_W - 6 * (int)strlen(pl) - 3, 27);
 
     g->drawFastHLine(0, 38, HA_UI_W, TFT_DARKGREY);
 
