@@ -383,6 +383,7 @@ void setup() {
     engine.reset();
     haHostReset();
     haContentLoadAll(engine, HA_LANG_CODE[haLang]); // baked packs for the chosen language
+    engine.setLang(HA_LANG_CODE[haLang]);           // relay the phone-UI language to joiners
     haHostLog("packs loaded");
     ENGINE_UNLOCK();
     Serial.printf(
@@ -403,6 +404,7 @@ void loop() {
         haLangDirty = false;
         ENGINE_LOCK();
         haContentLoadAll(engine, HA_LANG_CODE[haLang]);
+        engine.setLang(HA_LANG_CODE[haLang]); // new joiners get the localized phone UI
         ENGINE_UNLOCK();
         // Restart the active game so the phones get the new language right away: a
         // fresh lobby with the new pack names instead of waiting for the next round.
