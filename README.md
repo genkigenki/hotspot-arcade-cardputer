@@ -110,8 +110,8 @@ Serial at 115200 prints the AP address, asset counts and free heap at boot.
 
 Games: trivia, would-you-rather, word scramble, spectrum, kiss marry kill, reaction duel,
 connect four, tic-tac-toe, dots & boxes, reversi, drawing, pong, guess the color,
-battleship — fourteen in all. Every one is phone-driven; the host picks which is live and
-watches.
+battleship, chess — fifteen in all. Every one is phone-driven; the host picks which is
+live and watches.
 
 ## Build
 

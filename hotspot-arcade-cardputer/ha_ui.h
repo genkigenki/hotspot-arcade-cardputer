@@ -45,6 +45,7 @@ static const HaGameItem HA_UI_GAMES[] = {
     {HA_GAME_PONG, "Pong", "Classic paddle rally", true},
     {HA_GAME_GUESSCOLOR, "Guess the Color", "Match the RGB colour", false},
     {HA_GAME_BATTLESHIP, "Battleship", "Hide a fleet, sink theirs", true},
+    {HA_GAME_CHESS, "Chess", "1v1, full chess rules", true},
     {HA_GAME_NONE, "None (lobby)", "Just the join lobby", false},
 };
 static const int HA_UI_GAME_COUNT = sizeof(HA_UI_GAMES) / sizeof(HA_UI_GAMES[0]);
