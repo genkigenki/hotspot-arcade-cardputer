@@ -1,6 +1,6 @@
 ### v0.5.0 — German, top to bottom + settings overhaul
 
-- 🌍 **Play fully in German** — a language switch in Settings (English / Deutsch). Both the **content** (all six content games, 32 packs) **and the phone interface** are German — buttons, prompts, in-game text, the lot. Pick a language once; the host streams the content and relays the UI language to every phone, English fallback for anything untranslated.
+- 🌍 **Play fully in German** — a language switch in Settings (English / Deutsch). The **content** (all six content games, 32 packs), the **phone interface** and the **Cardputer's own screen** are all German — buttons, prompts, in-game text, the host menus, settings and event log, the lot. Pick a language once; the host streams the content, relays the UI language to every phone, and switches its own screen. English fallback for anything untranslated.
 - ♟️ **Chess** — a 15th game (1v1, full FIDE rules with a blitz clock), from upstream.
 - 🔤 **UTF-8-safe games** — Word Scramble and Draw handle umlauts and ß correctly.
 - 💾 **Settings on the SD card** — SSID, audio and language survive a reboot and even a full-chip reflash.

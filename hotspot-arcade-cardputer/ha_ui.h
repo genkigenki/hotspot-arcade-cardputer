@@ -24,36 +24,45 @@ void haHostSnapshot(HaHost& dst);
 // Same list, same order as the Flipper's game_select scene. `duel` marks the 1v1
 // challenge games (they pair players off into matches); `desc` is a one-line blurb
 // shown under the selection.
+extern uint8_t haLang; // 0 = en, 1 = de (defined in the .ino); also declared below
+
 struct HaGameItem {
     uint8_t id;
     const char* label;
     const char* desc;
     bool duel;
+    const char* label_de;
+    const char* desc_de;
 };
 static const HaGameItem HA_UI_GAMES[] = {
-    {HA_GAME_TRIVIA, "Trivia", "Quiz, fastest right wins", false},
-    {HA_GAME_WYR, "Would You Rather", "Group vote, A or B", false},
-    {HA_GAME_SCRAMBLE, "Word Scramble", "Unscramble the word", false},
-    {HA_GAME_SPECTRUM, "Spectrum", "Give a clue, dial to guess", false},
-    {HA_GAME_KMK, "Kiss Marry Kill", "Predict a player's picks", false},
-    {HA_GAME_REACT, "Reaction Duel", "Tap on green, fastest wins", false},
-    {HA_GAME_CONNECT4, "Connect Four", "Four in a row", true},
-    {HA_GAME_TICTACTOE, "Tic-Tac-Toe", "Three in a row", true},
-    {HA_GAME_DOTS, "Dots & Boxes", "Close the most boxes", true},
-    {HA_GAME_REVERSI, "Reversi", "Flip discs, most wins", true},
-    {HA_GAME_DRAW, "Drawing", "Draw it, others guess", false},
-    {HA_GAME_PONG, "Pong", "Classic paddle rally", true},
-    {HA_GAME_GUESSCOLOR, "Guess the Color", "Match the RGB colour", false},
-    {HA_GAME_BATTLESHIP, "Battleship", "Hide a fleet, sink theirs", true},
-    {HA_GAME_CHESS, "Chess", "1v1, full chess rules", true},
-    {HA_GAME_NONE, "None (lobby)", "Just the join lobby", false},
+    {HA_GAME_TRIVIA, "Trivia", "Quiz, fastest right wins", false, "Trivia", "Quiz, schnellste richtig gewinnt"},
+    {HA_GAME_WYR, "Would You Rather", "Group vote, A or B", false, "Entweder oder", "Gruppenwahl, A oder B"},
+    {HA_GAME_SCRAMBLE, "Word Scramble", "Unscramble the word", false, "Wortsalat", "Wort entwirren"},
+    {HA_GAME_SPECTRUM, "Spectrum", "Give a clue, dial to guess", false, "Spektrum", "Hinweis geben, Regler raten"},
+    {HA_GAME_KMK, "Kiss Marry Kill", "Predict a player's picks", false, "Kiss Marry Kill", "Errate die Wahl eines Spielers"},
+    {HA_GAME_REACT, "Reaction Duel", "Tap on green, fastest wins", false, "Reaktionsduell", "Bei Gruen tippen, Schnellster gewinnt"},
+    {HA_GAME_CONNECT4, "Connect Four", "Four in a row", true, "Vier gewinnt", "Vier in einer Reihe"},
+    {HA_GAME_TICTACTOE, "Tic-Tac-Toe", "Three in a row", true, "Tic-Tac-Toe", "Drei in einer Reihe"},
+    {HA_GAME_DOTS, "Dots & Boxes", "Close the most boxes", true, "Kaestchen", "Die meisten Kaestchen schliessen"},
+    {HA_GAME_REVERSI, "Reversi", "Flip discs, most wins", true, "Reversi", "Steine drehen, meiste gewinnt"},
+    {HA_GAME_DRAW, "Drawing", "Draw it, others guess", false, "Malen", "Malen, andere raten"},
+    {HA_GAME_PONG, "Pong", "Classic paddle rally", true, "Pong", "Klassisches Paddel-Duell"},
+    {HA_GAME_GUESSCOLOR, "Guess the Color", "Match the RGB colour", false, "Farbe raten", "RGB-Farbe treffen"},
+    {HA_GAME_BATTLESHIP, "Battleship", "Hide a fleet, sink theirs", true, "Schiffe versenken", "Flotte verstecken, versenken"},
+    {HA_GAME_CHESS, "Chess", "1v1, full chess rules", true, "Schach", "1v1, volle Schachregeln"},
+    {HA_GAME_NONE, "None (lobby)", "Just the join lobby", false, "Keins (Lobby)", "Nur die Lobby"},
 };
 static const int HA_UI_GAME_COUNT = sizeof(HA_UI_GAMES) / sizeof(HA_UI_GAMES[0]);
 
+// Host-UI string picker: German when the Settings language is German, else English.
+static inline const char* hu(const char* en, const char* de) { return haLang == 1 ? de : en; }
+static inline const char* hgLabel(const HaGameItem& g) { return haLang == 1 ? g.label_de : g.label; }
+static inline const char* hgDesc(const HaGameItem& g) { return haLang == 1 ? g.desc_de : g.desc; }
+
 static const char* haUiGameLabel(uint8_t id) {
     for(int i = 0; i < HA_UI_GAME_COUNT; i++)
-        if(HA_UI_GAMES[i].id == id) return HA_UI_GAMES[i].label;
-    return "None";
+        if(HA_UI_GAMES[i].id == id) return hgLabel(HA_UI_GAMES[i]);
+    return hu("None", "Keins");
 }
 
 enum HaUiView {
@@ -194,22 +203,22 @@ static void haUiDrawDash(lgfx::LovyanGFX* g) {
     uint8_t order[HA_MAX_PLAYERS + 1];
     int n = haUiSorted(order);
     g->setTextColor(TFT_WHITE, TFT_BLACK);
-    snprintf(line, sizeof(line), "Game: %s", haUiGameLabel(haUiSnap.activeGame));
+    snprintf(line, sizeof(line), hu("Game: %s", "Spiel: %s"), haUiGameLabel(haUiSnap.activeGame));
     g->drawString(line, 3, 27);
     char pl[20]; // players pinned to the right edge so the two never crowd
-    snprintf(pl, sizeof(pl), "Players: %d", n);
+    snprintf(pl, sizeof(pl), hu("Players: %d", "Spieler: %d"), n);
     g->drawString(pl, HA_UI_W - 6 * (int)strlen(pl) - 3, 27);
 
     g->drawFastHLine(0, 38, HA_UI_W, TFT_DARKGREY);
 
     if(n == 0) {
         g->setTextColor(TFT_DARKGREY, TFT_BLACK);
-        g->drawString("waiting for phones to join...", 3, 46);
+        g->drawString(hu("waiting for phones to join...", "warte auf Handys..."), 3, 46);
     } else {
         haUiDrawScoreCols(g, order, n, 44, 5); // 2 columns x 5 = up to 10
         if(n > 10) {
             g->setTextColor(TFT_DARKGREY, TFT_BLACK);
-            snprintf(line, sizeof(line), "+%d more", n - 10);
+            snprintf(line, sizeof(line), hu("+%d more", "+%d weitere"), n - 10);
             g->drawString(line, 3, HA_UI_H - 22);
         }
     }
@@ -220,7 +229,8 @@ static void haUiDrawDash(lgfx::LovyanGFX* g) {
         g->setTextColor(HA_ORANGE, TFT_BLACK);
         g->drawString(haUiSnap.lastEvent, 3, HA_UI_H - 22);
     }
-    haUiFooter(g, "G game   L board   S settings   E end");
+    haUiFooter(g, hu("G game   L board   S settings   E end",
+                     "G Spiel   L Rang   S Optionen   E Ende"));
 }
 
 #define HA_GAMES_ROW 16 // px per game row at text size 2
@@ -239,7 +249,7 @@ static void haUiComputeGamesOrder() {
                 swap = haGamePlays[HA_UI_GAMES[haGamesOrder[j]].id] <
                        haGamePlays[HA_UI_GAMES[k].id];
             else
-                swap = strcmp(HA_UI_GAMES[haGamesOrder[j]].label, HA_UI_GAMES[k].label) > 0;
+                swap = strcmp(hgLabel(HA_UI_GAMES[haGamesOrder[j]]), hgLabel(HA_UI_GAMES[k])) > 0;
             if(!swap) break;
             haGamesOrder[j + 1] = haGamesOrder[j];
             j--;
@@ -253,7 +263,8 @@ static void haUiComputeGamesOrder() {
 static void haUiDrawGames(lgfx::LovyanGFX* g) {
     haUiComputeGamesOrder();
     char title[32];
-    snprintf(title, sizeof(title), "GAMES - %s", haGameSort == 1 ? "MOST PLAYED" : "A-Z");
+    snprintf(title, sizeof(title), hu("GAMES - %s", "SPIELE - %s"),
+             haGameSort == 1 ? hu("MOST PLAYED", "MEISTGESPIELT") : "A-Z");
     haUiHeader(g, title);
 
     int descY = HA_UI_H - 22;
@@ -270,8 +281,8 @@ static void haUiDrawGames(lgfx::LovyanGFX* g) {
         bool live = (it.id == haUiSnap.activeGame);
         if(sel) g->fillRect(0, y - 1, HA_UI_W, HA_GAMES_ROW, HA_ORANGE);
         g->setTextColor(sel ? TFT_BLACK : (live ? HA_ORANGE : TFT_WHITE), sel ? HA_ORANGE : TFT_BLACK);
-        char nm[18];
-        snprintf(nm, sizeof(nm), "%s%s", live ? "*" : "", it.label);
+        char nm[24];
+        snprintf(nm, sizeof(nm), "%s%s", live ? "*" : "", hgLabel(it));
         g->drawString(nm, 3, y);
         if(it.duel) {
             g->setTextSize(1);
@@ -286,25 +297,27 @@ static void haUiDrawGames(lgfx::LovyanGFX* g) {
     // Selected game's one-line description.
     g->fillRect(0, descY - 2, HA_UI_W, 12, TFT_BLACK);
     g->setTextColor(TFT_LIGHTGREY, TFT_BLACK);
-    g->drawString(HA_UI_GAMES[haGamesOrder[haUiCursor]].desc, 3, descY);
+    g->drawString(hgDesc(HA_UI_GAMES[haGamesOrder[haUiCursor]]), 3, descY);
 
-    haUiFooter(g, ";/. move  S sort  ENTER pick  ESC back");
+    haUiFooter(g, hu(";/. move  S sort  ENTER pick  ESC back",
+                     ";/. Wahl  S Sort  ENTER Start  ESC zurueck"));
 }
 
 // The Leaderboard always shows the current session's live standings (they're
 // auto-saved to the SD card when this screen is opened, so they survive a restart).
 // R clears the scores to start a new session.
 static void haUiDrawBoard(lgfx::LovyanGFX* g) {
-    haUiHeader(g, "LEADERBOARD");
+    haUiHeader(g, hu("LEADERBOARD", "RANGLISTE"));
     uint8_t order[HA_MAX_PLAYERS + 1];
     int n = haUiSorted(order);
     if(n == 0) {
         g->setTextColor(TFT_DARKGREY, TFT_BLACK);
-        g->drawString("no players yet", 3, 18);
+        g->drawString(hu("no players yet", "noch keine Spieler"), 3, 18);
     } else {
         haUiDrawScoreCols(g, order, n, 16, 5); // same 2 columns x 5 as the dashboard
     }
-    haUiFooter(g, haSdOk ? "R reset scores   ESC back" : "no SD   R reset   ESC back");
+    haUiFooter(g, haSdOk ? hu("R reset scores   ESC back", "R zuruecksetzen   ESC zurueck")
+                         : hu("no SD   R reset   ESC back", "keine SD   R reset   ESC zurueck"));
 }
 
 static const char* haUiAudioName() {
@@ -353,10 +366,12 @@ static void haUiValPill(lgfx::LovyanGFX* g, int x, int y, const char* txt, bool 
 }
 
 static void haUiDrawSettings(lgfx::LovyanGFX* g) {
-    haUiHeader(g, "SETTINGS");
+    haUiHeader(g, hu("SETTINGS", "OPTIONEN"));
     g->setTextSize(1);
     const int VALX = 92, y0 = 20, rowH = 20;
-    const char* labels[HA_SET_COUNT] = {"SSID", "Audio", "Language", "Access Point", "Event log"};
+    const char* labels[HA_SET_COUNT] = {
+        "SSID", "Audio", hu("Language", "Sprache"),
+        hu("Access Point", "Netzwerk"), hu("Event log", "Ereignisse")};
     for(int i = 0; i < HA_SET_COUNT; i++) {
         bool sel = (i == haUiCursor);
         int y = y0 + i * rowH;
@@ -371,7 +386,7 @@ static void haUiDrawSettings(lgfx::LovyanGFX* g) {
             break;
         }
         case 1: { // Audio -- off / low / high
-            const char* o[3] = {"off", "low", "high"};
+            const char* o[3] = {hu("off", "aus"), hu("low", "leise"), hu("high", "laut")};
             for(int a = 0; a < 3; a++) cx = haUiOptPill(g, cx, y, o[a], haAudioLevel == a, sel);
             break;
         }
@@ -380,20 +395,21 @@ static void haUiDrawSettings(lgfx::LovyanGFX* g) {
             break;
         case 3: { // Access Point -- on / off
             bool up = haUiSnap.portalRunning;
-            cx = haUiOptPill(g, cx, y, "on", up, sel);
-            cx = haUiOptPill(g, cx, y, "off", !up, sel);
+            cx = haUiOptPill(g, cx, y, hu("on", "an"), up, sel);
+            cx = haUiOptPill(g, cx, y, hu("off", "aus"), !up, sel);
             break;
         }
         case 4: // Event log -- opens a sub-screen
-            haUiValPill(g, cx, y, "GO >", sel, false);
+            haUiValPill(g, cx, y, hu("GO >", "LOS >"), sel, false);
             break;
         }
     }
-    haUiFooter(g, ";/. move   ,// change   ENTER open   ESC back");
+    haUiFooter(g, hu(";/. move   ,// change   ENTER open   ESC back",
+                     ";/. Wahl   ,// aendern   ENTER OK   ESC zurueck"));
 }
 
 static void haUiDrawConsole(lgfx::LovyanGFX* g) {
-    haUiHeader(g, "EVENT LOG");
+    haUiHeader(g, hu("EVENT LOG", "EREIGNISSE"));
     int rows = 11;
     uint32_t total = haUiSnap.evTotal;
     uint32_t have = total < HA_EV_MAX ? total : HA_EV_MAX;
@@ -407,24 +423,27 @@ static void haUiDrawConsole(lgfx::LovyanGFX* g) {
     }
     if(have == 0) {
         g->setTextColor(TFT_DARKGREY, TFT_BLACK);
-        g->drawString("nothing yet", 3, 16);
+        g->drawString(hu("nothing yet", "noch nichts"), 3, 16);
     }
-    haUiFooter(g, "ESC back");
+    haUiFooter(g, hu("ESC back", "ESC zurueck"));
 }
 
 static void haUiDrawSsid(lgfx::LovyanGFX* g) {
-    haUiHeader(g, "AP NAME");
+    haUiHeader(g, hu("AP NAME", "AP-NAME"));
     g->setTextColor(TFT_WHITE, TFT_BLACK);
-    g->drawString("Type a new SSID:", 3, 20);
+    g->drawString(hu("Type a new SSID:", "Neue SSID eingeben:"), 3, 20);
     g->fillRect(3, 34, HA_UI_W - 6, 14, TFT_DARKGREY);
     g->setTextColor(TFT_WHITE, TFT_DARKGREY);
     char shown[40];
     snprintf(shown, sizeof(shown), "%s_", haUiEdit);
     g->drawString(shown, 6, 37);
     g->setTextColor(TFT_DARKGREY, TFT_BLACK);
-    g->drawString("Applying restarts the access point,", 3, 58);
-    g->drawString("which drops every connected phone.", 3, 68);
-    haUiFooter(g, "ENTER apply   DEL erase   ESC cancel");
+    g->drawString(hu("Applying restarts the access point,",
+                     "Uebernehmen startet den AP neu,"), 3, 58);
+    g->drawString(hu("which drops every connected phone.",
+                     "alle verbundenen Handys fliegen raus."), 3, 68);
+    haUiFooter(g, hu("ENTER apply   DEL erase   ESC cancel",
+                     "ENTER OK   DEL loeschen   ESC abbrechen"));
 }
 
 static void haUiDraw() {

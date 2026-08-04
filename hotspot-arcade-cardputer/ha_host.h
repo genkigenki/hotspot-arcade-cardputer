@@ -17,6 +17,10 @@
 #define HA_EV_MAX 24 // console scrollback
 #define HA_EV_LEN 44 // fits the 240px screen at the 6px font
 
+// Content/UI language, owned by the .ino (0 = en, 1 = de). Declared here so the
+// roster event tags below can be logged in the selected language.
+extern uint8_t haLang;
+
 struct HaHostPlayer {
     bool used;
     char nick[HA_NICK_LEN];
@@ -63,7 +67,8 @@ static inline bool haHostJoin(uint8_t pid, const char* nick) {
     strlcpy(haHost.p[pid].nick, nick, HA_NICK_LEN);
     if(isNew) haHost.p[pid].score = 0;
     char line[HA_EV_LEN];
-    snprintf(line, sizeof(line), "%s %s", isNew ? "JOIN" : "NAME", nick);
+    snprintf(line, sizeof(line), "%s %s",
+             isNew ? (haLang ? "DA" : "JOIN") : "NAME", nick);
     haHostLog(line);
     return isNew;
 }
@@ -71,7 +76,7 @@ static inline bool haHostJoin(uint8_t pid, const char* nick) {
 static inline void haHostLeave(uint8_t pid) {
     if(pid < 1 || pid > HA_MAX_PLAYERS) return;
     char line[HA_EV_LEN];
-    snprintf(line, sizeof(line), "LEAVE %s", haHost.p[pid].nick);
+    snprintf(line, sizeof(line), "%s %s", haLang ? "WEG" : "LEAVE", haHost.p[pid].nick);
     haHost.p[pid] = HaHostPlayer{};
     haHostLog(line);
 }

@@ -223,7 +223,7 @@ static void startPortal() {
 
     ENGINE_LOCK();
     haHost.portalRunning = true;
-    haHostLog("AP up");
+    haHostLog(hu("AP up", "AP an"));
     ENGINE_UNLOCK();
     haJingleUp();
     Serial.printf("[ha] AP \"%s\" up at %s\n", apName, WiFi.softAPIP().toString().c_str());
@@ -241,7 +241,7 @@ static void stopPortal() {
     engine.reset();
     haHostReset();
     haHost.portalRunning = false;
-    haHostLog("AP stopped");
+    haHostLog(hu("AP stopped", "AP aus"));
     ENGINE_UNLOCK();
     Serial.println("[ha] AP stopped");
 }
@@ -252,7 +252,7 @@ void haHostSelectGame(uint8_t game) {
     ENGINE_LOCK();
     engine.selectGame(game);
     haHost.activeGame = game;
-    haHostLog("game changed");
+    haHostLog(hu("game changed", "Spiel gewechselt"));
     ENGINE_UNLOCK();
 }
 
@@ -261,14 +261,14 @@ void haHostResetScores() {
     engine.resetScores();
     for(int i = 1; i <= HA_MAX_PLAYERS; i++)
         if(haHost.p[i].used) haHost.p[i].score = 0;
-    haHostLog("scores reset");
+    haHostLog(hu("scores reset", "Punkte zurueckgesetzt"));
     ENGINE_UNLOCK();
 }
 
 void haHostRoundEnd() {
     ENGINE_LOCK();
     engine.roundEnd();
-    haHostLog("round ended");
+    haHostLog(hu("round ended", "Runde beendet"));
     ENGINE_UNLOCK();
 }
 
@@ -384,7 +384,7 @@ void setup() {
     haHostReset();
     haContentLoadAll(engine, HA_LANG_CODE[haLang]); // baked packs for the chosen language
     engine.setLang(HA_LANG_CODE[haLang]);           // relay the phone-UI language to joiners
-    haHostLog("packs loaded");
+    haHostLog(hu("packs loaded", "Packs geladen"));
     ENGINE_UNLOCK();
     Serial.printf(
         "[ha] %u web file(s), %u pack(s), free heap %u\n",
@@ -409,7 +409,7 @@ void loop() {
         // Restart the active game so the phones get the new language right away: a
         // fresh lobby with the new pack names instead of waiting for the next round.
         if(haHost.activeGame != HA_GAME_NONE) haHostSelectGame(haHost.activeGame);
-        haHostLog(haLang ? "language: Deutsch" : "language: English");
+        haHostLog(haLang ? "Sprache: Deutsch" : "Language: English");
     }
 
     if(portalRunning) {
