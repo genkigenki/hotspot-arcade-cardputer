@@ -50,6 +50,7 @@ static const HaGameItem HA_UI_GAMES[] = {
     {HA_GAME_GUESSCOLOR, "Guess the Color", "Match the RGB colour", false, "Farbe raten", "RGB-Farbe treffen"},
     {HA_GAME_BATTLESHIP, "Battleship", "Hide a fleet, sink theirs", true, "Schiffe versenken", "Flotte verstecken, versenken"},
     {HA_GAME_CHESS, "Chess", "1v1, full chess rules", true, "Schach", "1v1, volle Schachregeln"},
+    {HA_GAME_SECRETS, "Secrets", "Hidden vote: guess the yes-count", false, "Secrets", "Verdeckt: rate die Ja-Zahl"},
     {HA_GAME_NONE, "None (lobby)", "Just the join lobby", false, "Keins (Lobby)", "Nur die Lobby"},
 };
 static const int HA_UI_GAME_COUNT = sizeof(HA_UI_GAMES) / sizeof(HA_UI_GAMES[0]);
@@ -58,6 +59,32 @@ static const int HA_UI_GAME_COUNT = sizeof(HA_UI_GAMES) / sizeof(HA_UI_GAMES[0])
 static inline const char* hu(const char* en, const char* de) { return haLang == 1 ? de : en; }
 static inline const char* hgLabel(const HaGameItem& g) { return haLang == 1 ? g.label_de : g.label; }
 static inline const char* hgDesc(const HaGameItem& g) { return haLang == 1 ? g.desc_de : g.desc; }
+
+// Upstream PR #18 lets the phones vote the game away from under the host. The engine
+// announces the winner by NAME ({"gamevote":"approved","game":"wyr"}), so the host needs
+// the inverse of the engine's gameName() to move its own screen. Kept here beside the
+// game table it belongs to; the strings are the engine's, copied from gameName().
+struct HaEngName {
+    uint8_t id;
+    const char* eng;
+};
+static const HaEngName HA_ENG_NAMES[] = {
+    {HA_GAME_TRIVIA, "trivia"},         {HA_GAME_CONNECT4, "connect4"},
+    {HA_GAME_TICTACTOE, "tictactoe"},   {HA_GAME_DOTS, "dots"},
+    {HA_GAME_DRAW, "draw"},             {HA_GAME_PONG, "pong"},
+    {HA_GAME_REACT, "react"},           {HA_GAME_WYR, "wyr"},
+    {HA_GAME_SCRAMBLE, "scramble"},     {HA_GAME_REVERSI, "reversi"},
+    {HA_GAME_GUESSCOLOR, "gc"},         {HA_GAME_BATTLESHIP, "bs"},
+    {HA_GAME_SPECTRUM, "spectrum"},     {HA_GAME_KMK, "kmk"},
+    {HA_GAME_CHESS, "chess"},           {HA_GAME_SECRETS, "secrets"},
+    {HA_GAME_NONE, "none"},
+};
+
+static uint8_t haUiGameIdByName(const char* n) {
+    for(unsigned i = 0; i < sizeof(HA_ENG_NAMES) / sizeof(HA_ENG_NAMES[0]); i++)
+        if(strcmp(HA_ENG_NAMES[i].eng, n) == 0) return HA_ENG_NAMES[i].id;
+    return HA_GAME_NONE;
+}
 
 static const char* haUiGameLabel(uint8_t id) {
     for(int i = 0; i < HA_UI_GAME_COUNT; i++)
@@ -84,9 +111,11 @@ extern uint8_t haAudioLevel;
 // the packs when haLangDirty is set. Interface text stays English for now.
 extern uint8_t haLang;
 extern bool haLangDirty; // set by Settings; the .ino reloads packs and clears it
-#define HA_LANG_COUNT 2
-static const char* const HA_LANG_CODE[HA_LANG_COUNT] = {"en", "de"};
-static const char* const HA_LANG_NAME[HA_LANG_COUNT] = {"English", "Deutsch"};
+#define HA_LANG_COUNT 3
+static const char* const HA_LANG_CODE[HA_LANG_COUNT] = {"en", "de", "pt-br"};
+// "Portugues" without the circumflex on purpose: the host panel font is ASCII-only and
+// would draw a placeholder box. The phone UI is unaffected -- it has real fonts.
+static const char* const HA_LANG_NAME[HA_LANG_COUNT] = {"English", "Deutsch", "Portugues"};
 
 #define HA_SET_COUNT 5 // settings rows: SSID, Audio, Language, AP, Event log
 
@@ -136,10 +165,25 @@ static void haUiBegin() {
 // green/red -- that's a status, and the web uses the same good/bad colours.
 #define HA_ORANGE 0xFC00
 
+// Which firmware is on this board, readable across a table and in a screenshot.
+//
+// BUMP THIS BY ONE ON EVERY BUILD THAT GETS FLASHED. That is the whole point: with a
+// dozen builds in an evening, "it does not work" is unanswerable unless we both know
+// which one. A git hash is more precise and useless out loud; a small number you can
+// read off the screen and say is worth more here.
+#define HA_BUILD_NO 14
+
 static void haUiHeader(lgfx::LovyanGFX* g, const char* title) {
     g->fillRect(0, 0, HA_UI_W, 12, HA_ORANGE);
     g->setTextColor(TFT_BLACK, HA_ORANGE);
     g->drawString(title, 3, 2);
+    { // build number beside the title: dim, present without competing
+        char b[8];
+        snprintf(b, sizeof(b), "#%d", HA_BUILD_NO);
+        g->setTextColor(0x7BEF, HA_ORANGE);
+        g->drawString(b, 3 + (int)g->textWidth(title) + 6, 2);
+        g->setTextColor(TFT_BLACK, HA_ORANGE);
+    }
     char bat[8];
     snprintf(bat, sizeof(bat), "%d%%", (int)M5Cardputer.Power.getBatteryLevel());
     g->drawString(bat, HA_UI_W - 6 * (int)strlen(bat) - 3, 2);
@@ -380,9 +424,18 @@ static void haUiDrawSettings(lgfx::LovyanGFX* g) {
         int cx = VALX;
         switch(i) {
         case 0: { // SSID -- value shown; ENTER opens the text editor
-            char s[16];
-            snprintf(s, sizeof(s), "%.12s", haHostSsid());
-            haUiValPill(g, cx, y, s, sel, false);
+            // This row ignores VALX and starts right after its own label. Every other row
+            // holds option pills that read better in one aligned column, but the SSID is a
+            // single free-text value up to 32 bytes, and column alignment was costing it two
+            // thirds of the screen: the old fixed "%.12s" clipped the default name to
+            // "Hotspot Arc". From x=34 to the right edge, minus the pill's 8px padding and a
+            // 6px margin, at 6px per glyph, the whole 32-character name fits.
+            const int SSIDX = 34;
+            char s[34];
+            int room = (HA_UI_W - SSIDX - 8 - 6) / 6;
+            if(room > (int)sizeof(s) - 1) room = (int)sizeof(s) - 1;
+            snprintf(s, sizeof(s), "%.*s", room, haHostSsid());
+            haUiValPill(g, SSIDX, y, s, sel, false);
             break;
         }
         case 1: { // Audio -- off / low / high

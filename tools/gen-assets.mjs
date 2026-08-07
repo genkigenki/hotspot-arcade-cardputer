@@ -51,26 +51,57 @@ const GAMES = [
   ['draw', 'HA_GAME_DRAW'],
   ['spectrum', 'HA_GAME_SPECTRUM'],
   ['kmk', 'HA_GAME_KMK'],
+  ['secrets', 'HA_GAME_SECRETS'], // upstream PR #17
 ];
 const MAX_PER_GAME = 6; // per game AND per language: only one language is ever pushed
 
-// Language packs. "en" is upstream's vendored content (never edited here); "de" and
-// any future language live in this fork's own packs-<lang>/ tree. The host bakes them
-// all and, at runtime, streams only the language the Settings screen selects (falling
-// back to English per game where a language has no packs). The engine's per-game pack
-// cap therefore applies per language, not across all languages.
-const LANGS = [
-  ['en', join(vendor, 'packs')],
-  ['de', join(root, 'packs-de')],
-];
+// Languages are DISCOVERED inside vendor/, not listed here, and they are upstream's own.
+// Upstream's convention is English at the root of packs/<game>/ and one subdirectory per
+// translation (de/, pt-br/, ...). This fork used to keep a second German tree of its own
+// (packs-de/), which meant every upstream content change had to be copied by hand -- and it
+// drifted: upstream's Secrets ships packs/secrets/de/ that the separate tree never had, so
+// German Secrets simply had no content. Reading the subdirectories keeps vendor 1:1 and
+// picks up any language upstream adds with no change here.
+//
+// The host bakes every language and streams only the one Settings selects, falling back to
+// English per game where that language has no pack -- so the engine's per-game cap applies
+// per language, not across all of them.
+const langDirsFor = (gameDir) => {
+  const out = [['en', gameDir]]; // flat .txt files at the root are English
+  for (const e of readdirSync(gameDir, { withFileTypes: true }))
+    if (e.isDirectory()) out.push([e.name.toLowerCase(), join(gameDir, e.name)]);
+  return out;
+};
+
+// Stop the build if upstream ships packs for a game this table does not know. That is a
+// one-line fix here, but as a silent omission it is expensive: the packs get baked with no
+// game id, so the game appears in the picker, offers an empty pack list, and never starts a
+// round -- with nothing anywhere saying why. This has cost real debugging time three times
+// now (Secrets twice, Spyfall once), which is what a build-time error is for.
+{
+  const shipped = readdirSync(join(vendor, 'packs'), { withFileTypes: true })
+    .filter((e) => e.isDirectory())
+    .map((e) => e.name);
+  const known = new Set(GAMES.map(([sub]) => sub));
+  const orphans = shipped.filter((d) => !known.has(d));
+  if (orphans.length) {
+    throw new Error(
+      `vendor/packs has ${orphans.length} directory(ies) this host cannot place: ${orphans.join(', ')}\n` +
+        `Add each to the GAMES table in tools/gen-assets.mjs with its HA_GAME_* constant,\n` +
+        `or the packs bake with no game id and the game silently has no content.`,
+    );
+  }
+}
 
 const packs = [];
 const dropped = [];
+const langs = new Set();
 for (const [sub, gameConst] of GAMES) {
-  for (const [lang, base] of LANGS) {
-    const dir = join(base, sub);
-    if (!existsSync(dir)) continue;
+  const gameDir = join(vendor, 'packs', sub);
+  if (!existsSync(gameDir)) continue;
+  for (const [lang, dir] of langDirsFor(gameDir)) {
     const names = readdirSync(dir).filter((n) => n.toLowerCase().endsWith('.txt')).sort();
+    if (names.length) langs.add(lang);
     for (const name of names.slice(0, MAX_PER_GAME)) {
       packs.push({
         gameConst,

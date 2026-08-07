@@ -1,5 +1,6 @@
-# arduino-cli output
-build/
+# arduino-cli output. build*/ not build/: other targets land in build-lilygo/ and
+# build-headless/, and those are artefacts too.
+build*/
 
 # M5Burner package (generated from build/ by tools/package-m5burner.sh)
 firmware/
