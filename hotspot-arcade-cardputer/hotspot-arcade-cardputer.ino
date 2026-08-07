@@ -19,6 +19,7 @@
 #include <ESPAsyncWebServer.h>
 #include <DNSServer.h>
 #include <esp_wifi.h>
+#include <lwip/etharp.h>
 #include <esp_ota_ops.h>
 #include <SD.h>
 #include <SPI.h>
@@ -100,6 +101,23 @@ void haUartScore(uint8_t pid, int delta, const char* reason) {
     haHostScore(pid, delta);
 }
 void haUartEvent(const String& json) {
+    // Upstream PR #18: the phones can vote the game away from under the host, without
+    // haHostSelectGame() ever being called -- and the host screen would go on showing the
+    // old one. The engine announces the winner here, and it names the game rather than
+    // numbering it, so map the name back to an id and move the mirror with it.
+    char gv[16], gname[20];
+    if(ha_json_str(json.c_str(), "gamevote", gv, sizeof(gv)) && strcmp(gv, "approved") == 0 &&
+       ha_json_str(json.c_str(), "game", gname, sizeof(gname))) {
+        uint8_t id = haUiGameIdByName(gname);
+        haHost.activeGame = id;
+        haHostTouch();
+        haUiForce = true; // redraw even while sitting on the picker
+        char msg[HA_EV_LEN];
+        snprintf(msg, sizeof(msg), hu("phones chose %s", "Handys wollen %s"), haUiGameLabel(id));
+        haHostSetEvent(msg);
+        return;
+    }
+
     // Same keys the Flipper's console picks out of the event feed.
     char ev[HA_EV_LEN];
     if(ha_json_str(json.c_str(), "duel", ev, sizeof(ev)) ||
@@ -137,6 +155,158 @@ void haUartRoundResult(const String& json) {
         else strlcpy(buf, j, sizeof(buf));
     }
     haHostSetEvent(buf);
+}
+
+// The IP -> MAC mapping comes from the AP's own DHCP server: ip_event_ap_staipassigned_t
+// carries the assigned address *and* the client MAC, so one event handler can keep a
+// small table (the AP caps stations well below HA_STA_MAX). A station that got its lease
+// before the handler was installed is missing from it; for those, read the MAC out of
+// lwIP's ARP cache instead, and if even that misses, key on the IP.
+
+#define HA_STA_MAX 10 // >= ESP_WIFI_MAX_CONN_NUM: the AP cannot hold more leases
+#define HA_KEY_MAC 0x01 // key tag: low 48 bits are a station MAC
+#define HA_KEY_IP 0x02 // key tag: low 32 bits are an IPv4 address
+
+struct StaLease {
+    uint32_t ip; // 0 = free slot
+    uint8_t mac[6];
+};
+static StaLease staLeases[HA_STA_MAX];
+// Written from the WiFi event task, read from the async WS task; the critical section
+// is a handful of instructions over a 10-entry array.
+static portMUX_TYPE leaseMux = portMUX_INITIALIZER_UNLOCKED;
+
+static uint64_t macDeviceKey(const uint8_t* mac) {
+    uint64_t v = 0;
+    for(int i = 0; i < 6; i++) v = (v << 8) | mac[i];
+    return ((uint64_t)HA_KEY_MAC << 56) | v;
+}
+
+static void leaseNote(uint32_t ip, const uint8_t* mac) {
+    portENTER_CRITICAL(&leaseMux);
+    int slot = -1, freeSlot = -1;
+    for(int i = 0; i < HA_STA_MAX; i++) {
+        if(!staLeases[i].ip) {
+            if(freeSlot < 0) freeSlot = i;
+        } else if(memcmp(staLeases[i].mac, mac, 6) == 0) {
+            slot = i; // same phone, (re)leased
+            break;
+        } else if(staLeases[i].ip == ip) {
+            slot = i; // this address now belongs to a different station
+        }
+    }
+    if(slot < 0) slot = freeSlot >= 0 ? freeSlot : 0;
+    staLeases[slot].ip = ip;
+    memcpy(staLeases[slot].mac, mac, 6);
+    portEXIT_CRITICAL(&leaseMux);
+}
+
+static void leaseForget(const uint8_t* mac) {
+    portENTER_CRITICAL(&leaseMux);
+    for(int i = 0; i < HA_STA_MAX; i++)
+        if(staLeases[i].ip && memcmp(staLeases[i].mac, mac, 6) == 0) staLeases[i].ip = 0;
+    portEXIT_CRITICAL(&leaseMux);
+}
+
+static void leasesClear() {
+    portENTER_CRITICAL(&leaseMux);
+    memset(staLeases, 0, sizeof(staLeases));
+    portEXIT_CRITICAL(&leaseMux);
+}
+
+static bool leaseMac(uint32_t ip, uint8_t* out) {
+    bool found = false;
+    portENTER_CRITICAL(&leaseMux);
+    for(int i = 0; i < HA_STA_MAX && !found; i++)
+        if(staLeases[i].ip == ip) {
+            memcpy(out, staLeases[i].mac, 6);
+            found = true;
+        }
+    portEXIT_CRITICAL(&leaseMux);
+    return found;
+}
+
+// The address a MAC currently holds, for the log line only (0 if unknown).
+static uint32_t leaseIp(const uint8_t* mac) {
+    uint32_t ip = 0;
+    portENTER_CRITICAL(&leaseMux);
+    for(int i = 0; i < HA_STA_MAX && !ip; i++)
+        if(staLeases[i].ip && memcmp(staLeases[i].mac, mac, 6) == 0) ip = staLeases[i].ip;
+    portEXIT_CRITICAL(&leaseMux);
+    return ip;
+}
+
+// Fallback for a station whose lease we never saw. Read without the lwIP core lock:
+// the ARP table is a fixed static array, so the worst case is reading a half-updated
+// entry (a wrong MAC, i.e. one extra player) rather than a bad pointer.
+static bool arpMac(uint32_t ip, uint8_t* out) {
+    for(size_t i = 0; i < ARP_TABLE_SIZE; i++) {
+        ip4_addr_t* eip = nullptr;
+        struct netif* nif = nullptr;
+        struct eth_addr* eth = nullptr;
+        if(etharp_get_entry(i, &eip, &nif, &eth) && eip && eth && eip->addr == ip) {
+            memcpy(out, eth->addr, 6);
+            return true;
+        }
+    }
+    return false;
+}
+
+// Which phone a socket is on, as the opaque key the engine stores. 0 = unknown, which
+// makes the engine fall back to one player per connection rather than merging clients.
+static uint64_t peerDeviceKey(AsyncWebSocketClient* client) {
+    uint32_t ip = (uint32_t)client->remoteIP();
+    if(!ip || ip == (uint32_t)apIP) return 0; // not a joined station
+    uint8_t mac[6];
+    if(leaseMac(ip, mac) || arpMac(ip, mac)) return macDeviceKey(mac);
+    return ((uint64_t)HA_KEY_IP << 56) | ip; // last resort: the address itself
+}
+
+// Render a key for the serial log: "ip=.. mac=.." when we know both.
+static String deviceKeyText(uint64_t key) {
+    char b[64];
+    if((uint8_t)(key >> 56) == HA_KEY_MAC) {
+        uint8_t mac[6];
+        for(int i = 0; i < 6; i++) mac[i] = (uint8_t)(key >> (40 - 8 * i));
+        uint32_t ip = leaseIp(mac);
+        String where = ip ? String("ip=") + IPAddress(ip).toString() + " " : String("");
+        snprintf(b, sizeof(b), "mac=%02X:%02X:%02X:%02X:%02X:%02X", mac[0], mac[1], mac[2],
+                 mac[3], mac[4], mac[5]);
+        return where + b;
+    }
+    if((uint8_t)(key >> 56) == HA_KEY_IP)
+        return String("ip=") + IPAddress((uint32_t)(key & 0xFFFFFFFFu)).toString() + " mac=?";
+    return String("device=unknown");
+}
+
+// The AP's DHCP server is where a station's IP and MAC are seen together. Registered
+// once in setup(), before any AP comes up, so no lease is missed (see peerDeviceKey).
+static void onWiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
+    if(event == ARDUINO_EVENT_WIFI_AP_STAIPASSIGNED)
+        leaseNote(info.wifi_ap_staipassigned.ip.addr, info.wifi_ap_staipassigned.mac);
+    else if(event == ARDUINO_EVENT_WIFI_AP_STADISCONNECTED)
+        leaseForget(info.wifi_ap_stadisconnected.mac);
+}
+
+// Identity trace: the engine calls this for every hello, telling us whether it made a
+// new player or recognised a phone that is already playing (a second browser context,
+// e.g. the captive mini-browser alongside Safari) and consolidated it onto that player.
+void haLogJoin(uint8_t pid, uint64_t deviceKey, const char* nick, bool recognised) {
+    String where = deviceKeyText(deviceKey);
+    if(recognised)
+        Serial.printf(
+            "[ha] SAME DEVICE %s -> pid=%u nick=\"%s\" (recognised)  players=%d\n",
+            where.c_str(),
+            (unsigned)pid,
+            nick,
+            haHostPlayerCount());
+    else
+        Serial.printf(
+            "[ha] JOIN pid=%u %s nick=\"%s\"  players=%d\n",
+            (unsigned)pid,
+            where.c_str(),
+            nick,
+            haHostPlayerCount());
 }
 
 // ---------------- HTTP (captive) ----------------
@@ -193,7 +363,7 @@ static void onWsEvent(
             memcpy(buf, data, len);
             buf[len] = '\0';
             ENGINE_LOCK();
-            engine.onInput(client->id(), buf);
+            engine.onInput(client->id(), peerDeviceKey(client), buf);
             ENGINE_UNLOCK();
         }
     }
@@ -212,6 +382,11 @@ static void installHandlers() {
 }
 
 static void startPortal() {
+    // A fresh session leases fresh addresses. Without this the IP -> MAC table
+    // outlives the AP, and the next phone to be handed a recycled address resolves
+    // to whoever held it last -- a wrong device identity, which is how ghost players
+    // and stolen nicknames appear. Upstream's own host clears it in both places.
+    leasesClear();
     WiFi.mode(WIFI_AP);
     WiFi.softAPConfig(apIP, apIP, IPAddress(255, 255, 255, 0));
     WiFi.softAP(apName, nullptr, 1, 0, AP_MAX_CONN); // open AP
@@ -237,6 +412,7 @@ static void stopPortal() {
         WiFi.softAPdisconnect(true);
         portalRunning = false;
     }
+    leasesClear();
     ENGINE_LOCK();
     engine.reset();
     haHostReset();
@@ -355,6 +531,9 @@ static void haCfgLoad() { // overrides NVS/defaults when the card has a config
 }
 
 void setup() {
+    // Registered before any AP comes up, so no DHCP lease is missed.
+    WiFi.onEvent(onWiFiEvent, ARDUINO_EVENT_WIFI_AP_STAIPASSIGNED);
+    WiFi.onEvent(onWiFiEvent, ARDUINO_EVENT_WIFI_AP_STADISCONNECTED);
     auto cfg = M5.config();
     M5Cardputer.begin(cfg, true);
     Serial.begin(115200);

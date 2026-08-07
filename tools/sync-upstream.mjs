@@ -56,11 +56,29 @@ for (const m of manifest) copy(join(up, 'web', 'dist', m.file), join(vendor, 'we
 // packs
 rmSync(join(vendor, 'packs'), { recursive: true, force: true });
 let packCount = 0;
+// Two levels deep, because upstream keeps translations in packs/<game>/<lang>/ (de/,
+// pt-br/, ...) with English flat at the game root. Copying only the top level silently
+// dropped every translation -- German Secrets exists upstream and simply never arrived
+// here, which is exactly the kind of gap a "verbatim copy" is supposed to make impossible.
+const langsSeen = new Set();
 for (const sub of readdirSync(join(up, 'packs'), { withFileTypes: true })) {
   if (!sub.isDirectory()) continue;
-  for (const f of readdirSync(join(up, 'packs', sub.name))) {
-    if (!f.toLowerCase().endsWith('.txt')) continue;
-    copy(join(up, 'packs', sub.name, f), join(vendor, 'packs', sub.name, f));
+  for (const e of readdirSync(join(up, 'packs', sub.name), { withFileTypes: true })) {
+    if (e.isDirectory()) {
+      for (const f of readdirSync(join(up, 'packs', sub.name, e.name))) {
+        if (!f.toLowerCase().endsWith('.txt')) continue;
+        copy(
+          join(up, 'packs', sub.name, e.name, f),
+          join(vendor, 'packs', sub.name, e.name, f),
+        );
+        langsSeen.add(e.name.toLowerCase());
+        packCount++;
+      }
+      continue;
+    }
+    if (!e.name.toLowerCase().endsWith('.txt')) continue;
+    copy(join(up, 'packs', sub.name, e.name), join(vendor, 'packs', sub.name, e.name));
+    langsSeen.add('en');
     packCount++;
   }
 }
