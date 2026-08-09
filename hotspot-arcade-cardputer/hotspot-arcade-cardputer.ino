@@ -128,6 +128,62 @@ void haUartEvent(const String& json) {
         haHostLog(ev); // lobby chatter, not a game status line
     }
 }
+// Finished artwork (Draw a Monster). On the Flipper build these frames cross the UART
+// and the Flipper writes an SVG to its SD card; here the Cardputer IS the host, so it
+// writes the SVG itself: /hotspot-arcade/art/fd-<seq>-<sheet>.svg. The engine streams
+// a sheet one segment per call precisely so nobody buffers a drawing -- the file is
+// the buffer. No SD card (or a failed open): every frame drops on the floor and the
+// game plays on, exactly like the score history does.
+static File haArtFile;
+void haUartArt(uint8_t op, const String& json) {
+    const char* j = json.c_str();
+    if(op == HA_ART_BEGIN) {
+        if(haArtFile) haArtFile.close(); // a lost END must not wedge the next sheet
+        SD.mkdir(HA_HIST_DIR);
+        SD.mkdir("/hotspot-arcade/art");
+        // No RTC offline, so files are numbered by an NVS counter (like the session
+        // history), plus the sheet id for a stable within-gallery order.
+        Preferences pr;
+        pr.begin("ha-art", false);
+        uint32_t seq = pr.getUInt("seq", 0) + 1;
+        pr.putUInt("seq", seq);
+        pr.end();
+        int id = 0;
+        ha_json_int(j, "id", &id);
+        char path[48];
+        snprintf(path, sizeof(path), "/hotspot-arcade/art/fd-%03u-%d.svg", (unsigned)seq, id);
+        haArtFile = SD.open(path, FILE_WRITE);
+        if(!haArtFile) return;
+        char w0[HA_NICK_LEN] = "", w1[HA_NICK_LEN] = "", w2[HA_NICK_LEN] = "";
+        ha_json_str(j, "w0", w0, sizeof(w0));
+        ha_json_str(j, "w1", w1, sizeof(w1));
+        ha_json_str(j, "w2", w2, sizeof(w2));
+        haArtFile.print("<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 255 255\" "
+                        "stroke=\"#111\" stroke-width=\"3\" stroke-linecap=\"round\" "
+                        "fill=\"none\">\n<!-- ");
+        haArtFile.print(w0);
+        haArtFile.print(" / ");
+        haArtFile.print(w1);
+        haArtFile.print(" / ");
+        haArtFile.print(w2);
+        haArtFile.print(" -->\n");
+    } else if(op == HA_ART_STROKE) {
+        if(!haArtFile) return;
+        int x0, y0, x1, y1;
+        if(!ha_json_int(j, "x0", &x0) || !ha_json_int(j, "y0", &y0) ||
+           !ha_json_int(j, "x1", &x1) || !ha_json_int(j, "y1", &y1))
+            return;
+        char line[80];
+        snprintf(line, sizeof(line), "<line x1=\"%d\" y1=\"%d\" x2=\"%d\" y2=\"%d\"/>\n", x0, y0,
+                 x1, y1);
+        haArtFile.print(line);
+    } else if(op == HA_ART_END) {
+        if(!haArtFile) return;
+        haArtFile.print("</svg>\n");
+        haArtFile.close();
+    }
+}
+
 static const char* haNick(int pid) {
     if(pid >= 1 && pid <= HA_MAX_PLAYERS && haHost.p[pid].used) return haHost.p[pid].nick;
     return "?";
