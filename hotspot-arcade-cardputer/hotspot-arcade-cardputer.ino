@@ -257,13 +257,6 @@ static void leaseNote(uint32_t ip, const uint8_t* mac) {
     portEXIT_CRITICAL(&leaseMux);
 }
 
-static void leaseForget(const uint8_t* mac) {
-    portENTER_CRITICAL(&leaseMux);
-    for(int i = 0; i < HA_STA_MAX; i++)
-        if(staLeases[i].ip && memcmp(staLeases[i].mac, mac, 6) == 0) staLeases[i].ip = 0;
-    portEXIT_CRITICAL(&leaseMux);
-}
-
 static void leasesClear() {
     portENTER_CRITICAL(&leaseMux);
     memset(staLeases, 0, sizeof(staLeases));
@@ -340,8 +333,12 @@ static String deviceKeyText(uint64_t key) {
 static void onWiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
     if(event == ARDUINO_EVENT_WIFI_AP_STAIPASSIGNED)
         leaseNote(info.wifi_ap_staipassigned.ip.addr, info.wifi_ap_staipassigned.mac);
-    else if(event == ARDUINO_EVENT_WIFI_AP_STADISCONNECTED)
-        leaseForget(info.wifi_ap_stadisconnected.mac);
+    // Deliberately NOT forgetting the lease on STADISCONNECTED. A phone that blips off
+    // the AP (screen lock, captive popup closing, walking to the fridge) and returns
+    // before DHCP re-announces would look up empty here, fall back to the IP key, and
+    // come back as a SECOND player -- one of the "duplicate user" shapes. Keeping the
+    // entry is safe: leaseNote() already reclaims a slot when the same IP is handed to
+    // a different station, and corrects the IP when the same station re-leases.
 }
 
 // Identity trace: the engine calls this for every hello, telling us whether it made a
