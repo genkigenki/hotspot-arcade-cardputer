@@ -51,6 +51,10 @@ static const HaGameItem HA_UI_GAMES[] = {
     {HA_GAME_BATTLESHIP, "Battleship", "Hide a fleet, sink theirs", true, "Schiffe versenken", "Flotte verstecken, versenken"},
     {HA_GAME_CHESS, "Chess", "1v1, full chess rules", true, "Schach", "1v1, volle Schachregeln"},
     {HA_GAME_SECRETS, "Secrets", "Hidden vote: guess the yes-count", false, "Secrets", "Verdeckt: rate die Ja-Zahl"},
+    {HA_GAME_FILLBLANK, "Fill the Blank", "A judge picks the funniest card", false, "Lueckenfueller", "Jury kuert die lustigste Karte"},
+    {HA_GAME_WEREWOLF, "Werewolf", "Hidden roles, 5+ players", false, "Werwolf", "Geheime Rollen, ab 5 Spielern"},
+    {HA_GAME_SPYFALL, "Spyfall", "Find the spy, 3+ players", false, "Spyfall", "Findet den Spion, ab 3 Spielern"},
+    {HA_GAME_FRANKENDRAW, "Draw a Monster", "Three hands, one creature", false, "Monster malen", "Drei Haende, ein Wesen"},
     {HA_GAME_NONE, "None (lobby)", "Just the join lobby", false, "Keins (Lobby)", "Nur die Lobby"},
 };
 static const int HA_UI_GAME_COUNT = sizeof(HA_UI_GAMES) / sizeof(HA_UI_GAMES[0]);
@@ -77,6 +81,8 @@ static const HaEngName HA_ENG_NAMES[] = {
     {HA_GAME_GUESSCOLOR, "gc"},         {HA_GAME_BATTLESHIP, "bs"},
     {HA_GAME_SPECTRUM, "spectrum"},     {HA_GAME_KMK, "kmk"},
     {HA_GAME_CHESS, "chess"},           {HA_GAME_SECRETS, "secrets"},
+    {HA_GAME_FILLBLANK, "fillblank"},   {HA_GAME_WEREWOLF, "werewolf"},
+    {HA_GAME_SPYFALL, "spyfall"},       {HA_GAME_FRANKENDRAW, "frankendraw"},
     {HA_GAME_NONE, "none"},
 };
 
@@ -127,7 +133,10 @@ static int haUiScroll = 0;
 static int haUiDashScroll = 0; // dashboard player-list scroll offset
 static char haUiEdit[33] = "";
 static uint8_t haGameSort = 0;       // game picker order: 0 alphabetical, 1 most played
-static uint16_t haGamePlays[16] = {}; // rough per-game play count (indexed by game id)
+// Indexed by game id, so it must cover the HIGHEST id, not the game count: Secrets
+// is id 16 and was already writing one past the old [16] -- silently, into whatever
+// static came next. 32 leaves room for upstream's next games too.
+static uint16_t haGamePlays[32] = {}; // rough per-game play count (indexed by game id)
 static int haGamesOrder[HA_UI_GAME_COUNT]; // display order, filled per sort mode
 static int haHistIdx = 0;            // leaderboard/history: 0 = newest loaded session
 static HaHost haUiSnap; // draw source; never touched by the async task
@@ -171,7 +180,7 @@ static void haUiBegin() {
 // dozen builds in an evening, "it does not work" is unanswerable unless we both know
 // which one. A git hash is more precise and useless out loud; a small number you can
 // read off the screen and say is worth more here.
-#define HA_BUILD_NO 14
+#define HA_BUILD_NO 22
 
 static void haUiHeader(lgfx::LovyanGFX* g, const char* title) {
     g->fillRect(0, 0, HA_UI_W, 12, HA_ORANGE);

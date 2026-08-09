@@ -351,7 +351,19 @@ static void onWsEvent(
     uint8_t* data,
     size_t len) {
     (void)srv;
-    if(type == WS_EVT_DISCONNECT) {
+    if(type == WS_EVT_CONNECT) {
+        // Server-side liveness, so a silently broken link cannot leave a ghost slot.
+        // A phone that reloads mid-game or walks out of range without a TCP FIN keeps
+        // its player slot "connected" forever: the engine then counts it in the
+        // game-change vote, sends its frames into the void, and the vote dies in the
+        // timeout while the other phones see nothing (the play-test bug). With a
+        // keep-alive period the SERVER pings the socket when idle; a dead peer never
+        // ACKs, AsyncTCP's ack timeout closes the connection, WS_EVT_DISCONNECT fires
+        // and the slot is parked like any clean leave. This is not the client-side
+        // heartbeat we removed -- no JS timers, no self-diagnosis on the phone; the
+        // pong comes from the phone's TCP/WS stack without waking the page at all.
+        client->keepAlivePeriod(10);
+    } else if(type == WS_EVT_DISCONNECT) {
         ENGINE_LOCK();
         engine.onWsDisconnect(client->id());
         ENGINE_UNLOCK();

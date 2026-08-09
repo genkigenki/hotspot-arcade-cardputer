@@ -52,6 +52,8 @@ const GAMES = [
   ['spectrum', 'HA_GAME_SPECTRUM'],
   ['kmk', 'HA_GAME_KMK'],
   ['secrets', 'HA_GAME_SECRETS'], // upstream PR #17
+  ['fillblank', 'HA_GAME_FILLBLANK'], // upstream PR #25 (four party games)
+  ['spyfall', 'HA_GAME_SPYFALL'], // upstream PR #25; werewolf/frankendraw have no packs
 ];
 const MAX_PER_GAME = 6; // per game AND per language: only one language is ever pushed
 

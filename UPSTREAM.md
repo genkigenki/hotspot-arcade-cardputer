@@ -6,24 +6,30 @@ Tarik Caramanico). Nothing in `vendor/` is edited here -- see README.
 
 | | |
 | --- | --- |
-| commit | `77fbc82393d79e72592bd01accebd9b8623d2d84` |
-| describe | `v1.6.0-25-g77fbc82` |
+| commit | `059232cfdf8e8bd88f2335aa09d67b47a31e2915` |
+| describe | `v1.7.0-16-g059232c` |
 | engine | `vendor/engine/` -- ha_proto.h, ha_json.h, ha_games.h |
 | web bundle | `vendor/web/` -- 1 file(s) |
-| content packs | `vendor/packs/` -- 76 pack(s) |
+| content packs | `vendor/packs/` -- 90 pack(s) |
 | async libs | `vendor/libs/` -- AsyncTCP, ESPAsyncWebServer (third-party, own LICENSE files) |
 
-**This pin is two commits ahead of tarikbc/master**, both of them fixes waiting in a
-pull request there:
+**This pin is upstream master (v1.7.0 + 3) plus our two open PRs and two additions**,
+all together on the branch
+[`integration-cardputer-07`](https://github.com/genkigenki/hotspot-arcade/tree/integration-cardputer-07)
+of our upstream clone:
 
-- the phone client no longer pings every 2s and no longer closes a working socket after
-  15s of quiet -- that self-diagnosis dismissed the game-change vote for anyone whose
-  link went briefly silent
-- audio unlocks on the first gesture of any kind, not only on Play, so a returning
-  player (auto-rejoined from a saved nickname) is not silent for the whole session
+- PR #24 (play-test fixes: no client self-policing, audio unlock on any gesture,
+  language kept across reload)
+- PR #25 (four party games: Fill the Blank, Werewolf, Spyfall, Draw a Monster,
+  ids 17-20)
+- the expanded content packs (every pack filled to its cap, WYR 12->24, two
+  kid-friendly Kiss Marry Kill packs -- Tierreich and Fabelwesen)
+- the bot fill players: the lobby's testing switch now seats engine-run bots up
+  to the active game's minimum instead of bypassing the check, and the
+  game-change vote counts humans only
 
-Everything else under `vendor/` is upstream master verbatim. When the PR lands, re-sync
-and this note goes away.
+When PRs #24/#25 land upstream, re-sync from master and this note shrinks to the
+leftovers.
 
 Refresh with:
 

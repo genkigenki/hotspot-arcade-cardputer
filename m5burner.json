@@ -8,11 +8,13 @@
     {
       "Cardputer": {
         "path": "cardputer",
-        "device": ["Cardputer"],
+        "device": [
+          "Cardputer"
+        ],
         "default_baud": 921600
       }
     }
   ],
-  "version": "0.6.0",
+  "version": "0.7.0",
   "framework": "Arduino"
 }

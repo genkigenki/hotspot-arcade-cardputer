@@ -1,3 +1,28 @@
+### v0.7.0 — vier neue Spiele, Bots zum Testen, und ein Stapel Karten
+
+- 🃏 **Fill the Blank / Lückenfüller** (Spiel 17) — eine Jury kürt die lustigste Karte. Spielt schon zu zweit: der Stapel wird aus dem Deck aufgefüllt.
+- 🐺 **Werwolf** (Spiel 18) — geheime Rollen, Nacht- und Tagphasen, ab 5 Spielern (oder mit Bots, siehe unten).
+- 🕵️ **Spyfall** (Spiel 19) — einer kennt den Ort nicht. Ab 3 Spielern.
+- 🧟 **Draw a Monster / Monster malen** (Spiel 20) — Kopf, Rumpf, Beine von drei Händen, keiner sieht das Ganze. Ab 3 Spielern.
+- 🤖 **Bots füllen die Bank.** Der Test-Schalter in der Lobby setzt jetzt Engine-Bots auf die fehlenden Plätze (BOT-ADA, BOT-BEN, …), statt nur die Prüfung abzuschalten — Werwolf verteilt damit auch zu zweit echte fünf Rollen. Bots machen bereit, jagen, wählen und reichen ihr Panel ein; bei der Spielwechsel-Abstimmung zählen nur Menschen.
+- 👻 **Keine Geister-Wähler mehr.** Ein Handy, das still wegbricht (Reload, Funkloch, Sperrbildschirm), räumt seinen Platz jetzt von selbst: der Host pingt leise auf TCP-Ebene — ganz ohne das alte Client-Heartbeat. Vorher konnte so ein Geist die Spielwechsel-Box verschlucken.
+- 🗂️ **Viel mehr Karten, Englisch und Deutsch:** Draw, Scramble, Spectrum und Secrets auf 32 Einträge je Pack, Would You Rather 12→24, Kiss Marry Kill 24→32 **plus zwei neue Packs** — Tierreich und Fabelwesen, damit auch ein Tisch mit Kindern etwas zu wählen hat.
+- 🔄 **Upstream v1.7.0** ist komplett drin: Web-Bundle im LittleFS-Flash, Captive-Render, Android-Dark-Mode-Fix, Portugiesisch-Nachzügler, CRC-32-Prüfung des Bundles.
+- 🖥️ **Cardputer:** Die vier neuen Spiele stehen im Host-Menü (EN/DE), und ein Zählerüberlauf ist behoben, der seit Secrets bei jeder „meistgespielt"-Sortierung ein Byte hinter das Array schrieb.
+
+Zwanzig Spiele jetzt.
+
+### Install
+
+Search for **"Hotspot Arcade"** in the **M5Burner** app or the **M5Launcher** catalog — one tap, no cables.
+
+**Or flash by hand** (keeps M5Launcher):
+```
+esptool --chip esp32s3 --port <PORT> --baud 921600 write_flash 0x170000 hotspot-arcade-cardputer.ino.bin
+```
+
+Cardputer v1 (StampS3, 8MB). Full image and recovery are in the README.
+
 ### v0.6.0 — the phones run the party
 
 - 🎮 **Pick the game from your phone.** Tap the switcher, choose, and the others get a prompt: more than half have to agree. Nobody has to reach for the Cardputer any more — and its screen follows the vote, so the host still shows what is actually being played.
