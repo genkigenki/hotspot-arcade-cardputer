@@ -116,3 +116,31 @@ static void haContentLoadAll(Engine& engine, const char* lang) {
         haContentLoadPack(engine, bp.game, bp.text, bp.fallback);
     }
 }
+
+// Stream ONE game's packs, dropping every other game's parsed copy. Only one game is
+// ever played at a time, but the parsed Strings of all of them used to sit in the
+// heap together -- ~76 KB with the packs filled to their caps, on top of the four new
+// games' state, which starved lwIP: the AP still beaconed but DHCP had nothing left
+// to answer with, and phones hung at "connecting" forever. Resident content is now
+// bounded by the LARGEST single game (~14 KB) no matter how much the flash carries,
+// so the packs can keep growing for free. Re-parsing on a game switch is a few ms of
+// memory-mapped flash reads.
+//
+// The caller must push fresh state afterwards (the lobby's pack list changes), and
+// every path that changes the active game must come through here -- a game whose
+// packs are not loaded shows an empty list and never starts, the exact failure class
+// the gen-assets guard exists for.
+static void haContentLoadGame(Engine& engine, const char* lang, uint8_t game) {
+    engine.contentClear();
+    bool hasLang = false;
+    for(size_t i = 0; i < HA_BAKED_PACK_COUNT; i++) {
+        const HaBakedPack& bp = HA_BAKED_PACKS[i];
+        if(bp.game == game && strcmp(bp.lang, lang) == 0) hasLang = true;
+    }
+    const char* want = hasLang ? lang : "en";
+    for(size_t i = 0; i < HA_BAKED_PACK_COUNT; i++) {
+        const HaBakedPack& bp = HA_BAKED_PACKS[i];
+        if(bp.game != game || strcmp(bp.lang, want) != 0) continue;
+        haContentLoadPack(engine, bp.game, bp.text, bp.fallback);
+    }
+}

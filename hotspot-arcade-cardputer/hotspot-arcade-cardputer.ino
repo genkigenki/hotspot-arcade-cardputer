@@ -80,6 +80,42 @@ static SemaphoreHandle_t engineMutex = nullptr;
 #define ENGINE_LOCK() xSemaphoreTakeRecursive(engineMutex, portMAX_DELAY)
 #define ENGINE_UNLOCK() xSemaphoreGiveRecursive(engineMutex)
 
+// ---------------- connection-stage notes ----------------
+// "Phone cannot connect" is undebuggable from a blank dashboard. Every stage of a
+// phone's arrival leaves a line in the event log: radio association, the DHCP
+// lease, the first page load from that address, the WebSocket. The join itself
+// (nickname) was already logged. These fire on the WiFi-event and AsyncTCP tasks,
+// which must not write the host mirror, so they queue here and loop() drains them.
+static portMUX_TYPE haNoteMux = portMUX_INITIALIZER_UNLOCKED;
+static char haNoteBuf[8][40];
+static uint8_t haNoteW = 0, haNoteN = 0;
+
+static void haNote(const char* fmt, ...) {
+    char line[40];
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(line, sizeof(line), fmt, ap);
+    va_end(ap);
+    portENTER_CRITICAL(&haNoteMux);
+    strlcpy(haNoteBuf[haNoteW], line, sizeof(haNoteBuf[0]));
+    haNoteW = (uint8_t)((haNoteW + 1) % 8);
+    if(haNoteN < 8) haNoteN++;
+    portEXIT_CRITICAL(&haNoteMux);
+}
+
+static void haNoteDrain() {
+    char out[8][40];
+    int n = 0;
+    portENTER_CRITICAL(&haNoteMux);
+    while(haNoteN) {
+        uint8_t r = (uint8_t)((haNoteW + 8 - haNoteN) % 8);
+        strlcpy(out[n++], haNoteBuf[r], sizeof(out[0]));
+        haNoteN--;
+    }
+    portEXIT_CRITICAL(&haNoteMux);
+    for(int i = 0; i < n; i++) haHostLog(out[i]);
+}
+
 // ---------------- sinks used by the engine ----------------
 
 void haWsSendWs(uint32_t wsId, const String& msg) {
@@ -109,6 +145,11 @@ void haUartEvent(const String& json) {
     if(ha_json_str(json.c_str(), "gamevote", gv, sizeof(gv)) && strcmp(gv, "approved") == 0 &&
        ha_json_str(json.c_str(), "game", gname, sizeof(gname))) {
         uint8_t id = haUiGameIdByName(gname);
+        // The engine is about to selectGame(id) itself (this event fires just before).
+        // Load the new game's packs NOW so the lobby it then pushes has its list --
+        // with per-game loading the previous game's packs are all the engine holds.
+        // Same task, same lock, and the content arrays are idle at this moment.
+        haContentLoadGame(engine, HA_LANG_CODE[haLang], id);
         haHost.activeGame = id;
         haHostTouch();
         haUiForce = true; // redraw even while sitting on the picker
@@ -331,8 +372,19 @@ static String deviceKeyText(uint64_t key) {
 // The AP's DHCP server is where a station's IP and MAC are seen together. Registered
 // once in setup(), before any AP comes up, so no lease is missed (see peerDeviceKey).
 static void onWiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
-    if(event == ARDUINO_EVENT_WIFI_AP_STAIPASSIGNED)
+    if(event == ARDUINO_EVENT_WIFI_AP_STACONNECTED) {
+        const uint8_t* m = info.wifi_ap_staconnected.mac;
+        haNote("~ Funk: %02X%02X verbunden", m[4], m[5]);
+    } else if(event == ARDUINO_EVENT_WIFI_AP_STADISCONNECTED) {
+        const uint8_t* m = info.wifi_ap_stadisconnected.mac;
+        haNote("~ Funk: %02X%02X weg", m[4], m[5]);
+    }
+    if(event == ARDUINO_EVENT_WIFI_AP_STAIPASSIGNED) {
         leaseNote(info.wifi_ap_staipassigned.ip.addr, info.wifi_ap_staipassigned.mac);
+        const uint8_t* m = info.wifi_ap_staipassigned.mac;
+        haNote("~ DHCP: %02X%02X hat .%u", m[4], m[5],
+               (unsigned)(info.wifi_ap_staipassigned.ip.addr >> 24)); // last octet (LE)
+    }
     // Deliberately NOT forgetting the lease on STADISCONNECTED. A phone that blips off
     // the AP (screen lock, captive popup closing, walking to the fridge) and returns
     // before DHCP re-announces would look up empty here, fall back to the IP key, and
@@ -381,6 +433,19 @@ public:
         return true;
     }
     void handleRequest(AsyncWebServerRequest* request) override {
+        { // First HTTP contact per address -> "the page loaded" stage in the log.
+            static uint32_t seen[10] = {};
+            static uint8_t seenW = 0;
+            uint32_t ip = (uint32_t)request->client()->remoteIP();
+            bool isNew = ip != 0;
+            for(int i = 0; i < 10 && isNew; i++)
+                if(seen[i] == ip) isNew = false;
+            if(isNew) {
+                seen[seenW] = ip;
+                seenW = (uint8_t)((seenW + 1) % 10);
+                haNote("~ Seite: .%u laedt", (unsigned)(ip >> 24));
+            }
+        }
         const HaBakedFile* a = haFindFile(request->url().c_str());
         if(!a && HA_BAKED_FILE_COUNT) a = &HA_BAKED_FILES[0]; // captive probes -> the app
         if(!a) {
@@ -416,6 +481,7 @@ static void onWsEvent(
         // heartbeat we removed -- no JS timers, no self-diagnosis on the phone; the
         // pong comes from the phone's TCP/WS stack without waking the page at all.
         client->keepAlivePeriod(10);
+        haNote("~ Socket: .%u offen", (unsigned)((uint32_t)client->remoteIP() >> 24));
     } else if(type == WS_EVT_DISCONNECT) {
         ENGINE_LOCK();
         engine.onWsDisconnect(client->id());
@@ -491,6 +557,9 @@ static void stopPortal() {
 
 void haHostSelectGame(uint8_t game) {
     ENGINE_LOCK();
+    // Packs for the NEW game first, then the switch: selectGame's first lobby push
+    // already carries the pack list, and an empty one reads as "the game is broken".
+    haContentLoadGame(engine, HA_LANG_CODE[haLang], game);
     engine.selectGame(game);
     haHost.activeGame = game;
     haHostLog(hu("game changed", "Spiel gewechselt"));
@@ -626,8 +695,11 @@ void setup() {
     ENGINE_LOCK();
     engine.reset();
     haHostReset();
-    haContentLoadAll(engine, HA_LANG_CODE[haLang]); // baked packs for the chosen language
-    engine.setLang(HA_LANG_CODE[haLang]);           // relay the phone-UI language to joiners
+    // Only the active game's packs live in RAM (per-game loading); at boot that is
+    // the plain lobby, so nothing is parsed yet and the heap stays at its widest
+    // exactly when the AP and lwIP are spinning up.
+    haContentLoadGame(engine, HA_LANG_CODE[haLang], haHost.activeGame);
+    engine.setLang(HA_LANG_CODE[haLang]); // relay the phone-UI language to joiners
     haHostLog(hu("packs loaded", "Packs geladen"));
     ENGINE_UNLOCK();
     Serial.printf(
@@ -647,7 +719,7 @@ void loop() {
     if(haLangDirty) { // Settings changed the language -> re-stream that language's packs
         haLangDirty = false;
         ENGINE_LOCK();
-        haContentLoadAll(engine, HA_LANG_CODE[haLang]);
+        haContentLoadGame(engine, HA_LANG_CODE[haLang], haHost.activeGame);
         engine.setLang(HA_LANG_CODE[haLang]); // new joiners get the localized phone UI
         ENGINE_UNLOCK();
         // Restart the active game so the phones get the new language right away: a
@@ -662,6 +734,20 @@ void loop() {
         ENGINE_LOCK();
         engine.tick(millis());
         ENGINE_UNLOCK();
+    }
+
+    // Drain the connection-stage notes queued by the WiFi-event and AsyncTCP tasks
+    // (they must not write the host mirror themselves) into the event log.
+    haNoteDrain();
+
+    // The header shows the live free heap; nudge a redraw every 2s so it does not
+    // freeze on the value from the last state change.
+    {
+        static uint32_t hbAt = 0;
+        if((int32_t)(millis() - hbAt) >= 2000) {
+            hbAt = millis();
+            haUiForce = true;
+        }
     }
 
     haUiTick();

@@ -180,15 +180,17 @@ static void haUiBegin() {
 // dozen builds in an evening, "it does not work" is unanswerable unless we both know
 // which one. A git hash is more precise and useless out loud; a small number you can
 // read off the screen and say is worth more here.
-#define HA_BUILD_NO 22
+#define HA_BUILD_NO 23
 
 static void haUiHeader(lgfx::LovyanGFX* g, const char* title) {
     g->fillRect(0, 0, HA_UI_W, 12, HA_ORANGE);
     g->setTextColor(TFT_BLACK, HA_ORANGE);
     g->drawString(title, 3, 2);
-    { // build number beside the title: dim, present without competing
-        char b[8];
-        snprintf(b, sizeof(b), "#%d", HA_BUILD_NO);
+    { // build number and free heap beside the title: dim, present without competing.
+        // The heap is the number that explains "phones cannot connect": below roughly
+        // 30k lwIP stops answering DHCP while the AP keeps beaconing.
+        char b[20];
+        snprintf(b, sizeof(b), "#%d %uk", HA_BUILD_NO, (unsigned)(ESP.getFreeHeap() / 1024));
         g->setTextColor(0x7BEF, HA_ORANGE);
         g->drawString(b, 3 + (int)g->textWidth(title) + 6, 2);
         g->setTextColor(TFT_BLACK, HA_ORANGE);
