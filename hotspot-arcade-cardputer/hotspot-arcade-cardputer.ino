@@ -487,9 +487,18 @@ static void onWsEvent(
         // and the slot is parked like any clean leave. This is not the client-side
         // heartbeat we removed -- no JS timers, no self-diagnosis on the phone; the
         // pong comes from the phone's TCP/WS stack without waking the page at all.
-        client->keepAlivePeriod(10);
+        //
+        // GENTLY, though: 10s ping + AsyncTCP's default 5s ack timeout culled LIVE
+        // phones. An iPhone in power-save can sit on an ACK for seconds; at a table
+        // of five that turned ordinary radio silence into constant drop-outs, and a
+        // busy AP moment kicked everyone at once. 30s idle before a ping and a 15s
+        // ack window only reaps sockets that are truly gone (~45s worst case) --
+        // still plenty to clear a ghost voter before the next game-change vote.
+        client->keepAlivePeriod(30);
+        client->client()->setAckTimeout(15000);
         haNote("~ Socket: .%u offen", (unsigned)((uint32_t)client->remoteIP() >> 24));
     } else if(type == WS_EVT_DISCONNECT) {
+        haNote("~ Socket zu (#%u)", (unsigned)client->id());
         ENGINE_LOCK();
         engine.onWsDisconnect(client->id());
         ENGINE_UNLOCK();
@@ -748,7 +757,11 @@ void loop() {
 
     if(portalRunning) {
         dnsServer.processNextRequest();
-        ws.cleanupClients();
+        // The library default silently closes the OLDEST socket beyond EIGHT. Five
+        // phones each holding a captive-sheet socket beside the browser's is ten:
+        // the room then eats a steady stream of "random" disconnects, oldest first.
+        // The AP itself caps stations; sockets get headroom for the doubles.
+        ws.cleanupClients(AP_MAX_CONN * 2);
         ENGINE_LOCK();
         engine.tick(millis());
         ENGINE_UNLOCK();
@@ -757,6 +770,31 @@ void loop() {
     // Drain the connection-stage notes queued by the WiFi-event and AsyncTCP tasks
     // (they must not write the host mirror themselves) into the event log.
     haNoteDrain();
+
+    // Append queued log lines to the SD debug file (loop task owns the SD bus).
+    // One open/close per batch keeps it crash-safe; the volume is a few lines a
+    // minute. Also mirrored to USB serial so a tethered Mac sees the same stream.
+    {
+        char out[HA_DBG_RING][HA_EV_LEN + 12];
+        int n = 0;
+        portENTER_CRITICAL(&haDbgMux);
+        while(haDbgN) {
+            uint8_t r = (uint8_t)((haDbgW + HA_DBG_RING - haDbgN) % HA_DBG_RING);
+            strlcpy(out[n++], haDbgRing[r], sizeof(out[0]));
+            haDbgN--;
+        }
+        portEXIT_CRITICAL(&haDbgMux);
+        if(n) {
+            for(int i = 0; i < n; i++) Serial.printf("[ha] %s\n", out[i]);
+            if(haSdOk) {
+                File f = SD.open("/hotspot-arcade/debug.log", FILE_APPEND);
+                if(f) {
+                    for(int i = 0; i < n; i++) f.println(out[i]);
+                    f.close();
+                }
+            }
+        }
+    }
 
     // The header shows the live free heap; repaint just that strip when the value
     // changes (a forced full redraw here was the every-2s screen flicker).

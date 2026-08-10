@@ -43,9 +43,28 @@ static inline void haHostTouch() {
     haHost.rev++;
 }
 
+// Debug mirror of the event log. haHostLog runs on the loop task AND from engine
+// sinks on the AsyncTCP task, and SD/SPI is not safe from two tasks -- so lines are
+// queued here and haDebugFlush() (loop() only) appends them to the SD card. A party
+// evening then leaves /hotspot-arcade/debug.log with timestamps to read afterwards,
+// instead of "everyone got kicked and nobody knows when or why".
+#define HA_DBG_RING 12
+static portMUX_TYPE haDbgMux = portMUX_INITIALIZER_UNLOCKED;
+static char haDbgRing[HA_DBG_RING][HA_EV_LEN + 12];
+static uint8_t haDbgW = 0, haDbgN = 0;
+
+static inline void haDebugQueue(const char* s) {
+    portENTER_CRITICAL(&haDbgMux);
+    snprintf(haDbgRing[haDbgW], sizeof(haDbgRing[0]), "[%7lu] %s", (unsigned long)millis(), s);
+    haDbgW = (uint8_t)((haDbgW + 1) % HA_DBG_RING);
+    if(haDbgN < HA_DBG_RING) haDbgN++;
+    portEXIT_CRITICAL(&haDbgMux);
+}
+
 static inline void haHostLog(const char* s) {
     strlcpy(haHost.ev[haHost.evTotal % HA_EV_MAX], s, HA_EV_LEN);
     haHost.evTotal++;
+    haDebugQueue(s);
     haHostTouch();
 }
 
