@@ -180,9 +180,16 @@ static void haUiBegin() {
 // dozen builds in an evening, "it does not work" is unanswerable unless we both know
 // which one. A git hash is more precise and useless out loud; a small number you can
 // read off the screen and say is worth more here.
-#define HA_BUILD_NO 24
+#define HA_BUILD_NO 25
+
+// The title the header last drew, so the heap ticker can refresh JUST the header
+// strip in place. Redrawing the whole screen every 2s was fine while the offscreen
+// sprite absorbed it; in direct-draw mode (sprite dropped for heap) it flickered
+// the entire panel every tick.
+static char haUiLastTitle[28] = "";
 
 static void haUiHeader(lgfx::LovyanGFX* g, const char* title) {
+    strlcpy(haUiLastTitle, title, sizeof(haUiLastTitle));
     g->fillRect(0, 0, HA_UI_W, 12, HA_ORANGE);
     g->setTextColor(TFT_BLACK, HA_ORANGE);
     g->drawString(title, 3, 2);
@@ -198,6 +205,20 @@ static void haUiHeader(lgfx::LovyanGFX* g, const char* title) {
     char bat[8];
     snprintf(bat, sizeof(bat), "%d%%", (int)M5Cardputer.Power.getBatteryLevel());
     g->drawString(bat, HA_UI_W - 6 * (int)strlen(bat) - 3, 2);
+}
+
+// The heap ticker's refresh: repaint ONLY the header strip, and only when the
+// shown kilobyte value actually changed. A full forced redraw every 2s was
+// visible flicker whenever drawing direct (and pointless work with the sprite).
+// Restricted to the dashboard -- the resting view where the number matters;
+// other views repaint their header on their own state changes anyway.
+static void haUiHeaderRefresh() {
+    if(haUiView != HA_VIEW_DASH || !haUiLastTitle[0]) return;
+    static unsigned lastK = ~0u;
+    unsigned k = (unsigned)(ESP.getFreeHeap() / 1024);
+    if(k == lastK) return;
+    lastK = k;
+    haUiHeader((lgfx::LovyanGFX*)&M5Cardputer.Display, haUiLastTitle);
 }
 
 static void haUiFooter(lgfx::LovyanGFX* g, const char* hint) {

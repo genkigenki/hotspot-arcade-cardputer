@@ -758,13 +758,13 @@ void loop() {
     // (they must not write the host mirror themselves) into the event log.
     haNoteDrain();
 
-    // The header shows the live free heap; nudge a redraw every 2s so it does not
-    // freeze on the value from the last state change.
+    // The header shows the live free heap; repaint just that strip when the value
+    // changes (a forced full redraw here was the every-2s screen flicker).
     {
         static uint32_t hbAt = 0;
         if((int32_t)(millis() - hbAt) >= 2000) {
             hbAt = millis();
-            haUiForce = true;
+            haUiHeaderRefresh();
         }
     }
 
