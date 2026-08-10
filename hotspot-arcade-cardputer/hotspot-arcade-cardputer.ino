@@ -28,6 +28,13 @@
 #include "ha_proto.h"
 #include "ha_json.h"
 #include "ha_bundle.h"
+// RAM sizing for THIS host, set before the engine header: the Cardputer's S3 has no
+// PSRAM and carries the display sprite and the baked assets besides the engine, so
+// the engine's most generous static buffers are trimmed. 96 segments per Monster
+// panel still draws a fine beast (the client's pen quantizes hard anyway) and no
+// shipped trivia pack exceeds 15 questions. Together ~15 KB of .bss back.
+#define FD_PANEL_STROKES 96
+#define TRIVIA_MAX_QS 15
 #include "ha_games.h"
 #include "ha_host.h"
 #include "ha_history.h"
@@ -709,6 +716,17 @@ void setup() {
         (unsigned)ESP.getFreeHeap());
 
     startPortal();
+
+    // The 32 KB offscreen sprite is comfort, not function. With WiFi up we know the
+    // real budget: if the heap is too tight for the party (pushes are String-built;
+    // starve them and screens go black mid-game), give the sprite back and draw
+    // direct. A little flicker beats a dead room.
+    if(haUiSprite && ESP.getFreeHeap() < 90 * 1024) {
+        haUiCanvas.deleteSprite();
+        haUiSprite = false;
+        Serial.printf("[ha] sprite dropped for heap, free now %u\n", (unsigned)ESP.getFreeHeap());
+    }
+
     haUiDraw();
 }
 
@@ -747,6 +765,19 @@ void loop() {
         if((int32_t)(millis() - hbAt) >= 2000) {
             hbAt = millis();
             haUiForce = true;
+        }
+    }
+
+    // Heap telemetry on the USB serial, one line every 10s: current free, the
+    // low-water mark since boot, and the largest single block (fragmentation).
+    // `screen /dev/cu.usbmodem* 115200` on a Mac reads it live.
+    {
+        static uint32_t heapAt = 0;
+        if((int32_t)(millis() - heapAt) >= 10000) {
+            heapAt = millis();
+            Serial.printf(
+                "[ha] heap free=%u min=%u maxblock=%u\n", (unsigned)ESP.getFreeHeap(),
+                (unsigned)ESP.getMinFreeHeap(), (unsigned)ESP.getMaxAllocHeap());
         }
     }
 
