@@ -33,7 +33,11 @@
 // the engine's most generous static buffers are trimmed. 96 segments per Monster
 // panel still draws a fine beast (the client's pen quantizes hard anyway) and no
 // shipped trivia pack exceeds 15 questions. Together ~15 KB of .bss back.
-#define FD_PANEL_STROKES 96
+// 96 was half of upstream 192, and the room noticed: a monster ran out of ink
+// mid-leg. The store is heap, allocated only while this game is active
+// (HA_MAX_PLAYERS * FD_PANELS * strokes * 4 = 27,648 bytes at 192), so it costs
+// nothing in the other nineteen games.
+#define FD_PANEL_STROKES 192
 #define TRIVIA_MAX_QS 15
 #include "ha_games.h"
 #include "ha_host.h"

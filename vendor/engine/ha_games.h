@@ -1626,7 +1626,9 @@ public:
         } else if(strcmp(type, "done") == 0) {
             fdDone(pid);
         } else if(strcmp(type, "undo") == 0) {
-            fdUndo(pid);
+            int un = 1; // a pen stroke is many segments; the client says how many
+            if(!ha_json_int(json, "n", &un) || un < 1) un = 1;
+            fdUndo(pid, un);
         } else if(strcmp(type, "thumb") == 0) {
             int sheet, val;
             if(ha_json_int(json, "sheet", &sheet) && ha_json_int(json, "v", &val))
@@ -8071,12 +8073,17 @@ private:
 
     // Undo drops the last segment of your own panel. Pushed (unlike a stroke, which is
     // silent) so the ink bar's authoritative `used` follows it back down.
-    void fdUndo(uint8_t pid) {
+    // `count` segments back, not one: the client sends the length of the pen stroke it
+    // just took off its own copy, so both ends drop the same thing. Clamped here because
+    // the count arrives from a phone.
+    void fdUndo(uint8_t pid, int count) {
         if(_active != HA_GAME_FRANKENDRAW || _fd.pt.phase != 2) return;
         int s = fdSheetOf(pid);
         if(s < 0 || _fd.done[pid]) return;
         uint8_t& n = _fdSheets[s].n[_fd.pt.round - 1];
-        if(n) n--;
+        if(count < 1) count = 1;
+        if(count > (int)n) count = (int)n;
+        n = (uint8_t)(n - count);
         pushAll();
     }
 
