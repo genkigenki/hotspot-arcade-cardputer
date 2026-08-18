@@ -94,6 +94,49 @@ static void haContentLoadPack(Engine& engine, uint8_t game, const char* text, co
     }
 }
 
+// Inflate one baked pack and hand it to the parser above. Packs are stored raw-DEFLATE'd
+// (see tools/gen-assets.mjs): the text is ~44% of its size in flash, which bought ~57 KB
+// in an app slot that had 11.8 KB spare.
+//
+// The decompressor is free. tinfl_decompress_mem_to_mem() lives in the ESP32-S3's ROM
+// (esp32s3.rom.ld exports it at 0x4000084c), so there is no library to vendor and no
+// flash spent on the inflater -- only the ~1-3 KB heap buffer one pack needs while it is
+// being parsed. flags = 0 means a bare deflate stream: no zlib header, no adler32.
+//
+// What comes out is the pack file BYTE FOR BYTE, so haContentLoadPack() and the grammar
+// it implements are untouched. That is the point: the parse stays identical to the
+// Flipper's content_stream_pack(), and compression stays an envelope rather than a
+// second dialect only this host can read.
+extern "C" size_t tinfl_decompress_mem_to_mem(
+    void* pOut_buf, size_t out_buf_len, const void* pSrc_buf, size_t src_buf_len, int flags);
+
+static void haContentLoadPackZ(
+    Engine& engine,
+    uint8_t game,
+    const uint8_t* z,
+    uint32_t zlen,
+    uint32_t rawlen,
+    const char* fallback) {
+    // +1 for the NUL the parser's strchr()/strncmp() walk needs.
+    char* buf = (char*)malloc((size_t)rawlen + 1);
+    if(!buf) {
+        Serial.printf("[ha] pack %s: no heap for %u bytes\n", fallback, (unsigned)rawlen);
+        return;
+    }
+    size_t got = tinfl_decompress_mem_to_mem(buf, (size_t)rawlen, z, (size_t)zlen, 0);
+    if(got != (size_t)rawlen) {
+        // Only reachable if the generator and this loader disagree, so say so loudly
+        // rather than feeding the parser a truncated pack it would silently half-read.
+        Serial.printf(
+            "[ha] pack %s: inflate gave %u of %u bytes\n", fallback, (unsigned)got, (unsigned)rawlen);
+        free(buf);
+        return;
+    }
+    buf[rawlen] = 0;
+    haContentLoadPack(engine, game, buf, fallback);
+    free(buf);
+}
+
 // Stream the baked packs for one language into the engine. The generator caps each
 // game at the engine's TRIVIA_MAX_TOPICS packs PER LANGUAGE, and only one language is
 // ever loaded at a time, so the cap is never exceeded.
@@ -113,7 +156,7 @@ static void haContentLoadAll(Engine& engine, const char* lang) {
         const HaBakedPack& bp = HA_BAKED_PACKS[i];
         const char* want = (bp.game < 64 && hasLang[bp.game]) ? lang : "en";
         if(strcmp(bp.lang, want) != 0) continue;
-        haContentLoadPack(engine, bp.game, bp.text, bp.fallback);
+        haContentLoadPackZ(engine, bp.game, bp.z, bp.zlen, bp.rawlen, bp.fallback);
     }
 }
 
@@ -141,6 +184,6 @@ static void haContentLoadGame(Engine& engine, const char* lang, uint8_t game) {
     for(size_t i = 0; i < HA_BAKED_PACK_COUNT; i++) {
         const HaBakedPack& bp = HA_BAKED_PACKS[i];
         if(bp.game != game || strcmp(bp.lang, want) != 0) continue;
-        haContentLoadPack(engine, bp.game, bp.text, bp.fallback);
+        haContentLoadPackZ(engine, bp.game, bp.z, bp.zlen, bp.rawlen, bp.fallback);
     }
 }
