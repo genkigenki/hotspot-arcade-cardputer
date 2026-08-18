@@ -180,7 +180,7 @@ static void haUiBegin() {
 // dozen builds in an evening, "it does not work" is unanswerable unless we both know
 // which one. A git hash is more precise and useless out loud; a small number you can
 // read off the screen and say is worth more here.
-#define HA_BUILD_NO 35
+#define HA_BUILD_NO 36
 
 // The title the header last drew, so the heap ticker can refresh JUST the header
 // strip in place. Redrawing the whole screen every 2s was fine while the offscreen
@@ -291,11 +291,32 @@ static void haUiDrawDash(lgfx::LovyanGFX* g) {
         g->setTextColor(TFT_DARKGREY, TFT_BLACK);
         g->drawString(hu("waiting for phones to join...", "warte auf Handys..."), 3, 46);
     } else {
-        haUiDrawScoreCols(g, order, n, 44, 5); // 2 columns x 5 = up to 10
-        if(n > 10) {
+        // Who is winning, readable from across the room. The full field lives one key
+        // away on the leaderboard (L); this screen answers the question a room actually
+        // asks out loud, and a ten-name list at 6x8 answered it for nobody standing up.
+        const HaHostPlayer& top = haUiSnap.p[order[0]];
+        int tied = 0; // a shared lead is worth saying rather than picking a winner
+        for(int i = 1; i < n; i++)
+            if(haUiSnap.p[order[i]].score == top.score) tied++;
+
+        // Size 3 fits a 13-character nick across 240px; drop a step rather than clip.
+        g->setTextSize(3);
+        if((int)g->textWidth(top.nick) > HA_UI_W - 6) g->setTextSize(2);
+        g->setTextColor(HA_ORANGE, TFT_BLACK);
+        g->drawString(top.nick, (HA_UI_W - (int)g->textWidth(top.nick)) / 2, 42);
+
+        char sc[12];
+        snprintf(sc, sizeof(sc), "%ld", (long)top.score);
+        g->setTextSize(4);
+        g->setTextColor(TFT_WHITE, TFT_BLACK);
+        g->drawString(sc, (HA_UI_W - (int)g->textWidth(sc)) / 2, 66);
+
+        g->setTextSize(1);
+        if(tied) {
+            char t2[28];
+            snprintf(t2, sizeof(t2), hu("tied with %d", "geteilt mit %d"), tied);
             g->setTextColor(TFT_DARKGREY, TFT_BLACK);
-            snprintf(line, sizeof(line), hu("+%d more", "+%d weitere"), n - 10);
-            g->drawString(line, 3, HA_UI_H - 22);
+            g->drawString(t2, (HA_UI_W - 6 * (int)strlen(t2)) / 2, 102);
         }
     }
 
@@ -390,7 +411,9 @@ static void haUiDrawBoard(lgfx::LovyanGFX* g) {
         g->setTextColor(TFT_DARKGREY, TFT_BLACK);
         g->drawString(hu("no players yet", "noch keine Spieler"), 3, 18);
     } else {
-        haUiDrawScoreCols(g, order, n, 16, 5); // same 2 columns x 5 as the dashboard
+        // 2 x 6 = HA_MAX_PLAYERS, so a full room is all on screen. The dashboard shows
+        // only the leader now, which makes this the screen that owes you everybody.
+        haUiDrawScoreCols(g, order, n, 16, 6);
     }
     haUiFooter(g, haSdOk ? hu("R reset scores   ESC back", "R zuruecksetzen   ESC zurueck")
                          : hu("no SD   R reset   ESC back", "keine SD   R reset   ESC zurueck"));
