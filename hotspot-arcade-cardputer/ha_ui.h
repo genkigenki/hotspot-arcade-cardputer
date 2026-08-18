@@ -180,7 +180,7 @@ static void haUiBegin() {
 // dozen builds in an evening, "it does not work" is unanswerable unless we both know
 // which one. A git hash is more precise and useless out loud; a small number you can
 // read off the screen and say is worth more here.
-#define HA_BUILD_NO 26
+#define HA_BUILD_NO 27
 
 // The title the header last drew, so the heap ticker can refresh JUST the header
 // strip in place. Redrawing the whole screen every 2s was fine while the offscreen

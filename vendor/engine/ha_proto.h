@@ -16,7 +16,7 @@
 #define HA_FW_MAGIC_1 0x41 // 'A'
 #define HA_FW_MAGIC_2 0x52 // 'R'
 #define HA_FW_MAGIC_3 0x43 // 'C'  ("HARC" = Hotspot ARCade)
-#define HA_FW_VERSION 20 // v20: Frankendraw + ART report, on top of v19 (LittleFS web bundle + CRC in PING)
+#define HA_FW_VERSION 20 // v20: Frankendraw + ART report, atop v1.7.1 (PSRAM, caching, reconnect id)
 
 // Flipper -> ESP
 enum {
