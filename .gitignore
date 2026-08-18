@@ -17,3 +17,6 @@ Thumbs.db
 
 # junk from a crashed tool
 *.stackdump
+
+# Local working notes, never published
+docs/HANDOVER.md
