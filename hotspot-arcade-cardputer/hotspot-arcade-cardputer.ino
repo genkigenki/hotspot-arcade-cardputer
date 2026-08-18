@@ -156,6 +156,12 @@ void haUartEvent(const String& json) {
         // Load the new game's packs NOW so the lobby it then pushes has its list --
         // with per-game loading the previous game's packs are all the engine holds.
         // Same task, same lock, and the content arrays are idle at this moment.
+        //
+        // This MUST stay synchronous. Handing it to loop() (tried in build 29) left the
+        // incoming game with zero packs at selectGame() time: the vote was approved, the
+        // proposer's dialog never cleared, and the round could not start -- the same
+        // "appears in the picker, offers an empty pack list, never starts" failure the
+        // generator's own guard exists to prevent.
         haContentLoadGame(engine, HA_LANG_CODE[haLang], id);
         haHost.activeGame = id;
         haHostTouch();
@@ -687,6 +693,15 @@ void setup() {
     auto cfg = M5.config();
     M5Cardputer.begin(cfg, true);
     Serial.begin(115200);
+    // Serial here is USB CDC (the board boots with cdc_on_boot=1), and USBCDC::write()
+    // BLOCKS up to tx_timeout_ms -- 100 ms by default -- whenever a host is attached but
+    // is not draining the buffer. That is the normal case: a laptop plugged in for power
+    // with no terminal open. Every log line then costs up to 100 ms on whichever task
+    // wrote it, including the loop task inside the engine lock and the AsyncTCP callback,
+    // which is felt in the room as a game switch that hangs for seconds.
+    //
+    // 0 = drop instead of wait. Logs are a debugging aid; the room is not.
+    Serial.setTxTimeoutMs(0);
     haSdBegin();
 
     // M5Launcher installs apps with the ESP-IDF OTA rollback flag set: an app that
@@ -763,8 +778,20 @@ void loop() {
         // The AP itself caps stations; sockets get headroom for the doubles.
         ws.cleanupClients(AP_MAX_CONN * 2);
         ENGINE_LOCK();
+        uint32_t tk = micros();
         engine.tick(millis());
+        tk = micros() - tk;
         ENGINE_UNLOCK();
+        // Anything over 80 ms here is felt in the room: the tick is what pushes state,
+        // so a long one is a stall every phone sees. Logged with the heap because the
+        // suspicion is allocation cost, not the engine's own work.
+        if(tk > 80000)
+            Serial.printf(
+                "[ha] SLOW tick %lu us game=%u heap=%u largest=%u\n",
+                (unsigned long)tk,
+                (unsigned)haHost.activeGame,
+                (unsigned)ESP.getFreeHeap(),
+                (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
     }
 
     // Drain the connection-stage notes queued by the WiFi-event and AsyncTCP tasks

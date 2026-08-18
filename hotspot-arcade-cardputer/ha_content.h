@@ -174,6 +174,8 @@ static void haContentLoadAll(Engine& engine, const char* lang) {
 // packs are not loaded shows an empty list and never starts, the exact failure class
 // the gen-assets guard exists for.
 static void haContentLoadGame(Engine& engine, const char* lang, uint8_t game) {
+    uint32_t t0 = micros();
+    unsigned h0 = (unsigned)ESP.getFreeHeap();
     engine.contentClear();
     bool hasLang = false;
     for(size_t i = 0; i < HA_BAKED_PACK_COUNT; i++) {
@@ -186,4 +188,13 @@ static void haContentLoadGame(Engine& engine, const char* lang, uint8_t game) {
         if(bp.game != game || strcmp(bp.lang, want) != 0) continue;
         haContentLoadPackZ(engine, bp.game, bp.z, bp.zlen, bp.rawlen, bp.fallback);
     }
+    // Logged because this used to run on the AsyncTCP callback and cost the room its
+    // countdown frames. If the number ever creeps back up, that is why it is here.
+    Serial.printf(
+        "[ha] packs game=%u in %lu us, heap %u -> %u, largest %u\n",
+        (unsigned)game,
+        (unsigned long)(micros() - t0),
+        h0,
+        (unsigned)ESP.getFreeHeap(),
+        (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
 }

@@ -141,7 +141,9 @@ static inline int haUtf8Len(const char* s) {
 // would have charged all six sharing games, and WYR/Spectrum twice over, for depth only
 // this one needs -- 16.4 KB just to reach 48.
 #define KMK_MAX_PACKS 6 // one per shipped pack file (animals, creatures, famous, fiction, historical, mix)
+#ifndef KMK_MAX_NAMES // a host may size this down for RAM (see the Cardputer port)
 #define KMK_MAX_NAMES 104
+#endif
 
 // Secrets: each round shows a yes/no question. Everyone secretly predicts how many
 // of the N joined players will answer "yes" (0..N), then secretly answers. Only the
@@ -2853,8 +2855,8 @@ private:
     void drawClear() {
         _d.phase = 0;
         _d.drawer = 0;
-        _d.drawerSeq = 0;
-        _d.wordSeq = 0;
+        _d.drawerSeq = (decltype(_d.drawerSeq))esp_random();
+        _d.wordSeq = (decltype(_d.wordSeq))esp_random();
         _d.word[0] = '\0';
         _d.round = 0;
         _d.roundsTotal = 0;
@@ -3387,6 +3389,7 @@ private:
 
     void wyrClear() {
         partyClear(_wyr.pt);
+        _wyr.promptSeq = (decltype(_wyr.promptSeq))esp_random();
         _wyr.prompt = 0;
         _wyr.pack = 0;
         for(int i = 0; i <= HA_MAX_PLAYERS; i++) {
@@ -3641,6 +3644,7 @@ private:
     }
 
     void scrambleClear() {
+        _scr.wordSeq = (decltype(_scr.wordSeq))esp_random();
         partyClear(_scr.pt);
         _scr.word[0] = '\0';
         _scr.scram[0] = '\0';
@@ -5143,9 +5147,9 @@ private:
         partyClear(_spec.pt);
         _spec.pack = 0;
         _spec.card = 0;
-        _spec.cardSeq = 0;
+        _spec.cardSeq = (decltype(_spec.cardSeq))esp_random();
         _spec.psychic = 0;
-        _spec.psychicSeq = 0;
+        _spec.psychicSeq = (decltype(_spec.psychicSeq))esp_random();
         _spec.stage = 0;
         _spec.target = 0;
         _spec.clue[0] = '\0';
@@ -5304,8 +5308,8 @@ private:
             if(partyCountdownDone(pt, now)) {
                 pt.round = 0;
                 _spec.pack = (uint8_t)spectrumWinningPack();
-                _spec.psychicSeq = 0;
-                _spec.cardSeq = 0;
+                _spec.psychicSeq = (decltype(_spec.psychicSeq))esp_random();
+                _spec.cardSeq = (decltype(_spec.cardSeq))esp_random();
                 spectrumNextRound(now);
             }
         } else if(pt.phase == 2) {
@@ -5427,9 +5431,9 @@ private:
     void kmkClear() {
         partyClear(_kmk.pt);
         _kmk.pack = 0;
-        _kmk.nameSeq = 0;
+        _kmk.nameSeq = (decltype(_kmk.nameSeq))esp_random();
         _kmk.chooser = 0;
-        _kmk.chooserSeq = 0;
+        _kmk.chooserSeq = (decltype(_kmk.chooserSeq))esp_random();
         _kmk.stage = 0;
         for(int i = 0; i < 3; i++) {
             _kmk.person[i] = 0;
@@ -5596,8 +5600,8 @@ private:
             if(partyCountdownDone(pt, now)) {
                 pt.round = 0;
                 _kmk.pack = (uint8_t)kmkWinningPack();
-                _kmk.chooserSeq = 0;
-                _kmk.nameSeq = 0;
+                _kmk.chooserSeq = (decltype(_kmk.chooserSeq))esp_random();
+                _kmk.nameSeq = (decltype(_kmk.nameSeq))esp_random();
                 kmkNextRound(now);
             }
         } else if(pt.phase == 2) {
@@ -5718,7 +5722,7 @@ private:
         partyClear(_secrets.pt);
         _secrets.pack = 0;
         _secrets.question = 0;
-        _secrets.qSeq = 0;
+        _secrets.qSeq = (decltype(_secrets.qSeq))esp_random();
         _secrets.stage = 0;
         _secrets.yesCount = 0;
         for(int i = 0; i <= HA_MAX_PLAYERS; i++) {
@@ -5864,7 +5868,7 @@ private:
             if(partyCountdownDone(pt, now)) {
                 pt.round = 0;
                 _secrets.pack = (uint8_t)secretsWinningPack();
-                _secrets.qSeq = 0;
+                _secrets.qSeq = (decltype(_secrets.qSeq))esp_random();
                 secretsNextRound(now);
             }
         } else if(pt.phase == 2) {
@@ -6128,10 +6132,10 @@ private:
     void fillblankClear() {
         partyClear(_fb.pt);
         _fb.pack = 0;
-        _fb.promptSeq = 0;
+        _fb.promptSeq = (decltype(_fb.promptSeq))esp_random();
         _fb.prompt = 0;
         _fb.czar = 0;
-        _fb.czarSeq = 0;
+        _fb.czarSeq = (decltype(_fb.czarSeq))esp_random();
         _fb.stage = 0;
         _fb.deckLen = 0;
         _fb.drawNext = 0;
@@ -6433,8 +6437,8 @@ private:
             if(partyCountdownDone(pt, now)) {
                 pt.round = 0;
                 _fb.pack = (uint8_t)fillblankWinningPack();
-                _fb.czarSeq = 0;
-                _fb.promptSeq = 0;
+                _fb.czarSeq = (decltype(_fb.czarSeq))esp_random();
+                _fb.promptSeq = (decltype(_fb.promptSeq))esp_random();
                 for(int i = 0; i <= HA_MAX_PLAYERS; i++)
                     for(int j = 0; j < FB_HAND; j++) _fb.hand[i][j] = -1;
                 fillblankRefillDeck();
@@ -6556,16 +6560,25 @@ private:
             // empty author -- the two must not be confusable.
             s += ",\"authors\":[";
             int deckIdx = -1;
+            String deckList;
             for(int i = 0; i < (int)_fb.subCount; i++) {
                 if(i) s += ",";
                 uint8_t a = _fb.subPid[i];
-                if(a == FB_DECK_PID) deckIdx = i;
+                if(a == FB_DECK_PID) {
+                    deckIdx = i; // kept for older clients
+                    if(deckList.length()) deckList += ",";
+                    deckList += i;
+                }
                 s += "\"";
                 if(a != FB_DECK_PID && _p[a].used) s += ha_json_escape(_p[a].nick);
                 s += "\"";
             }
             s += "]";
-            s += ",\"deckcard\":" + String(deckIdx);
+            // deckcard names ONE card, but a pile can hold several deck cards: FB_MIN_PILE
+        // pads a two-player round from the deck, so the round the Czar judges has the
+        // deck's own card AND the padding. Only the last was flagged, and the client
+        // showed the rest as "a player who is gone". deckcards lists all of them.
+        s += ",\"deckcard\":" + String(deckIdx) + ",\"deckcards\":[" + deckList + "]";
             s += ",\"pick\":" + String((int)_fb.picked);
             s += ",\"winner\":\"" +
                  ha_json_escape(_fb.winner && _p[_fb.winner].used ? _p[_fb.winner].nick : "") +
@@ -7274,10 +7287,10 @@ private:
     void spyfallClear() {
         partyClear(_sf.pt);
         _sf.pack = 0;
-        _sf.locSeq = 0;
+        _sf.locSeq = (decltype(_sf.locSeq))esp_random();
         _sf.loc = 0;
         _sf.spy = 0;
-        _sf.spySeq = 0;
+        _sf.spySeq = (decltype(_sf.spySeq))esp_random();
         _sf.stage = 0;
         _sf.nomStage = 0;
         _sf.nominator = 0;
@@ -7665,8 +7678,8 @@ private:
             if(partyCountdownDone(pt, now)) {
                 pt.round = 0;
                 _sf.pack = (uint8_t)spyfallWinningPack();
-                _sf.spySeq = 0;
-                _sf.locSeq = 0;
+                _sf.spySeq = (decltype(_sf.spySeq))esp_random();
+                _sf.locSeq = (decltype(_sf.locSeq))esp_random();
                 spyfallNextRound(now);
             }
         } else if(pt.phase == 2) {
