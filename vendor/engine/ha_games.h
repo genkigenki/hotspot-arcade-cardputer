@@ -202,12 +202,6 @@ static inline int haUtf8Len(const char* s) {
 // room would learn "that was quick, the seer must be dead". The day may end
 // early, but only on a hammer (a strict majority), which is public anyway.
 #define WW_NIGHT_SECS 60
-// How long a silent socket is treated as a phone that dozed rather than a player who
-// left. A dark screen during a six-minute argument is normal, so the seat is held --
-// but Werewolf's win condition is who is present, so the hold cannot be open-ended or
-// the last wolf leaving makes the game unwinnable AND unfinishable. Whether the phone
-// comes back is the only thing that tells the two cases apart.
-#define WW_AWAY_GRACE_MS 60000
 // The day scales with the room: 60s of preamble plus 20s of airtime per living
 // player, clamped. Eight alive lands at 220s, seven at 200s.
 #define WW_DAY_BASE 60
@@ -930,7 +924,6 @@ public:
     // which is what lets a lone survivor finish the round -- and lets an uncaught spy
     // win by nobody having accused them.
     bool _held[HA_MAX_PLAYERS + 1] = {false};
-    uint32_t _heldAt[HA_MAX_PLAYERS + 1] = {0}; // when the socket went quiet (Werewolf grace)
 
     bool playerAway(uint8_t pid) const { return _p[pid].used && !_p[pid].wsId; }
 
@@ -939,11 +932,12 @@ public:
     bool rosterHeld() const {
         if(_active == HA_GAME_SPYFALL) return _sf.pt.phase == 2;
         if(_active == HA_GAME_FRANKENDRAW) return _fd.pt.phase == 2;
-        // Werewolf holds too -- a phone dozing through the argument is the common case --
-        // but only for WW_AWAY_GRACE_MS, because its win condition is who is present. An
-        // open-ended hold on the last wolf leaves a village that cannot lose and a game
-        // that cannot end. Spyfall and Frankendraw have no such condition, so their holds
-        // last the whole round.
+        // Werewolf holds for the whole round as well. A phone going dark during the
+        // argument is the normal case and the player is still sitting there, so there is
+        // no such thing as walking out mid-round here: the seat stays, alive and
+        // accusable. The consequence is deliberate -- an absent wolf never kills, and the
+        // village has to actually reach a lynch to end the game rather than being handed
+        // a default win.
         if(_active == HA_GAME_WEREWOLF) return _ww.pt.phase == 2;
         return false;
     }
@@ -951,26 +945,6 @@ public:
     // Turn held seats into real departures. Called from tick() as soon as the round that
     // held them is over, so every exit -- reveal, final, a game change, reset -- goes
     // through one path.
-    // Werewolf only: a hold that outlives the grace is a real departure, so the village
-    // can win by default when the last wolf genuinely walks off. Released one seat at a
-    // time -- another player's phone may have gone dark seconds ago and still be coming
-    // back.
-    void releaseExpiredHeld(uint32_t now) {
-        for(uint8_t i = 1; i <= HA_MAX_PLAYERS; i++) {
-            if(!_held[i] || !playerAway(i)) continue;
-            if((uint32_t)(now - _heldAt[i]) < WW_AWAY_GRACE_MS) continue;
-            _held[i] = false;
-            anyOnLeave(i);
-            parkPlayer(i);
-            _p[i] = Player{};
-            _gvVote[i] = -1;
-            haUartLeave(i);
-            triviaOnRosterChange();
-            partyRosterChanged();
-            pushAll();
-        }
-    }
-
     void releaseHeldSeats() {
         bool any = false;
         for(uint8_t i = 1; i <= HA_MAX_PLAYERS; i++) {
@@ -1024,7 +998,6 @@ public:
         if(rosterHeld() && !_gvActive) {
             _p[pid].wsId = 0;
             _held[pid] = true;
-            _heldAt[pid] = millis();
             _gvVote[pid] = -1;
             pushAll(); // the room sees them go quiet, the round carries on
             return;
@@ -1482,10 +1455,7 @@ public:
         // Seats held through a long round (see _held) become real departures the moment
         // that round is over -- whichever way it ended. Before botSync, so the bot count
         // is computed against the roster that is actually left.
-        if(!rosterHeld())
-            releaseHeldSeats();
-        else if(_active == HA_GAME_WEREWOLF)
-            releaseExpiredHeld(now);
+        if(!rosterHeld()) releaseHeldSeats();
         botSync(now); // keep the bot seats (testing switch) matched, and let them act
         if(_active == HA_GAME_TRIVIA)
             triviaTick(now);
