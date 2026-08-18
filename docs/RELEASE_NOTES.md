@@ -1,16 +1,18 @@
-### v0.7.0 — vier neue Spiele, Bots zum Testen, und ein Stapel Karten
+### v0.7.0 — four new games, connection fixes, more cards
 
-- 🃏 **Fill the Blank / Lückenfüller** (Spiel 17) — eine Jury kürt die lustigste Karte. Spielt schon zu zweit: der Stapel wird aus dem Deck aufgefüllt.
-- 🐺 **Werwolf** (Spiel 18) — geheime Rollen, Nacht- und Tagphasen, ab 5 Spielern (oder mit Bots, siehe unten).
-- 🕵️ **Spyfall** (Spiel 19) — einer kennt den Ort nicht. Ab 3 Spielern.
-- 🧟 **Draw a Monster / Monster malen** (Spiel 20) — Kopf, Rumpf, Beine von drei Händen, keiner sieht das Ganze. Ab 3 Spielern.
-- 🤖 **Bots füllen die Bank.** Der Test-Schalter in der Lobby setzt jetzt Engine-Bots auf die fehlenden Plätze (BOT-ADA, BOT-BEN, …), statt nur die Prüfung abzuschalten — Werwolf verteilt damit auch zu zweit echte fünf Rollen. Bots machen bereit, jagen, wählen und reichen ihr Panel ein; bei der Spielwechsel-Abstimmung zählen nur Menschen.
-- 👻 **Keine Geister-Wähler mehr.** Ein Handy, das still wegbricht (Reload, Funkloch, Sperrbildschirm), räumt seinen Platz jetzt von selbst: der Host pingt leise auf TCP-Ebene — ganz ohne das alte Client-Heartbeat. Vorher konnte so ein Geist die Spielwechsel-Box verschlucken.
-- 🗂️ **Viel mehr Karten, Englisch und Deutsch:** Draw, Scramble, Spectrum und Secrets auf 32 Einträge je Pack, Would You Rather 12→24, Kiss Marry Kill 24→32 **plus zwei neue Packs** — Tierreich und Fabelwesen, damit auch ein Tisch mit Kindern etwas zu wählen hat.
-- 🔄 **Upstream v1.7.0** ist komplett drin: Web-Bundle im LittleFS-Flash, Captive-Render, Android-Dark-Mode-Fix, Portugiesisch-Nachzügler, CRC-32-Prüfung des Bundles.
-- 🖥️ **Cardputer:** Die vier neuen Spiele stehen im Host-Menü (EN/DE), und ein Zählerüberlauf ist behoben, der seit Secrets bei jeder „meistgespielt"-Sortierung ein Byte hinter das Array schrieb.
+- **Fill the Blank** (game 17) — a judge picks the funniest card. Playable with two: the hand is topped up from the deck.
+- **Werewolf** (game 18) — hidden roles, night and day phases. Five players or more.
+- **Spyfall** (game 19) — one player does not know the location. Three players or more.
+- **Draw a Monster** (game 20) — head, torso and legs from three separate hands, nobody sees the whole. Three players or more.
+- **Phones connect again.** Twenty games and ninety card packs no longer fit in RAM at the same time. The Cardputer ran out of memory while WiFi was still coming up, so DHCP had nothing left to hand out leases with and phones sat at "connecting". Only the active game's packs are resident now: content grows in flash from here on, not in RAM. A further 17 KB of static memory was freed.
+- **Phones stay connected.** The keep-alive was strict enough to drop live iPhones that had gone into power saving; it is more patient now. Socket headroom was raised as well — each phone holds two connections, the captive sheet and the browser, which put five players over the previous limit. Event lines are written to the SD card with timestamps.
+- **No more ghost voters.** A phone that disappears without saying so (reload, dead spot, lock screen) now frees its seat: the host probes at TCP level, without the old client heartbeat. Such a ghost could previously block the game-change vote.
+- **More cards, English and German:** Draw, Scramble, Spectrum and Secrets to 32 entries per pack, Would You Rather 12→24, Kiss Marry Kill 24→32, plus two new packs — animals and mythical creatures.
+- **Upstream v1.7.0** is merged in full: web bundle in LittleFS flash, captive render, Android dark-mode fix, the remaining Portuguese strings, CRC-32 check of the bundle.
+- **Cardputer:** the four new games are in the host menu (EN/DE), and a counter overflow is fixed that wrote one byte past the array on every "most played" sort since Secrets.
+- Bot players added, for testing.
 
-Zwanzig Spiele jetzt.
+Twenty games now.
 
 ### Install
 
