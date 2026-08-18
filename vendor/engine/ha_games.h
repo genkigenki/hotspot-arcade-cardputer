@@ -908,6 +908,62 @@ public:
     }
 
     // Take a parked identity back out of the store (consumed, not copied).
+    // A seat held through a long round even though its phone is gone. Spyfall talks for
+    // six minutes, Werewolf's nights are a minute each and a Frankendraw panel is 75
+    // seconds: a phone dimming its screen in that time is normal behaviour, not a player
+    // leaving. Freeing the seat there ended the round outright -- three players, one
+    // dozing phone, and Spyfall dropped under SPYFALL_MIN_PLAYERS and aborted.
+    //
+    // So during those rounds a closing socket only clears wsId; the seat, the role and
+    // the score stay. The phone that comes back is recognised by deviceKey through the
+    // rebind that already exists in onHello, so it simply resumes. The round ends, and
+    // THEN the seats of whoever never came back are released for real.
+    //
+    // A held seat is never waited on: see wwOwesNight, fdAllDone, spyfallAllSeen and
+    // spyfallNextNominator. It still counts as present and still appears in the reveal,
+    // which is what lets a lone survivor finish the round -- and lets an uncaught spy
+    // win by nobody having accused them.
+    bool _held[HA_MAX_PLAYERS + 1] = {false};
+
+    bool playerAway(uint8_t pid) const { return _p[pid].used && !_p[pid].wsId; }
+
+    // The games whose round is long enough that a dark screen is expected. Phase 2 is
+    // "playing" for all three; outside it, a leave is a leave.
+    bool rosterHeld() const {
+        if(_active == HA_GAME_SPYFALL) return _sf.pt.phase == 2;
+        if(_active == HA_GAME_FRANKENDRAW) return _fd.pt.phase == 2;
+        // Werewolf is deliberately NOT here, even though its nights are a minute long.
+        // Its win condition is who is present: hold the last wolf's seat and the village
+        // can never lose, but the game can never end either -- a ghost still holding a
+        // role, which sim/test/werewolf.mjs case 5 exists to forbid. A wolf walking out
+        // is the village winning by default, and that has to stay immediate.
+        return false;
+    }
+
+    // Turn held seats into real departures. Called from tick() as soon as the round that
+    // held them is over, so every exit -- reveal, final, a game change, reset -- goes
+    // through one path.
+    void releaseHeldSeats() {
+        bool any = false;
+        for(uint8_t i = 1; i <= HA_MAX_PLAYERS; i++) {
+            if(!_held[i]) continue;
+            _held[i] = false;
+            if(_p[i].used && !_p[i].wsId) { // still gone: now it counts
+                anyOnLeave(i);
+                parkPlayer(i);
+                _p[i] = Player{};
+                _gvVote[i] = -1;
+                haUartLeave(i);
+                any = true;
+            }
+        }
+        if(any) {
+            triviaOnRosterChange();
+            partyRosterChanged();
+            pushAll();
+        }
+    }
+
     bool unparkPlayer(uint64_t deviceKey, uint8_t pid) {
         if(!deviceKey) return false;
         for(int i = 0; i < HA_PARKED_MAX; i++) {
@@ -936,6 +992,14 @@ public:
         // take the live player down with it.
         uint8_t pid = pidByWs(wsId);
         if(!pid) return;
+        // Mid-round in a long game: keep the seat, drop only the socket. See _held.
+        if(rosterHeld() && !_gvActive) {
+            _p[pid].wsId = 0;
+            _held[pid] = true;
+            _gvVote[pid] = -1;
+            pushAll(); // the room sees them go quiet, the round carries on
+            return;
+        }
         anyOnLeave(pid); // forfeit any active match
         bool wasProposer = (_gvActive && pid == _gvProposer);
         parkPlayer(pid);  // keep nick/avatar/score for this phone's return
@@ -974,6 +1038,7 @@ public:
             pid = pidByDevice(deviceKey);
             if(pid) {
                 _p[pid].wsId = wsId;
+                _held[pid] = false; // back inside the round it was held for
                 rebound = true;
                 haLogJoin(pid, deviceKey, _p[pid].nick, true);
             }
@@ -1385,6 +1450,10 @@ public:
             gameVoteResolve(now);
             return;
         }
+        // Seats held through a long round (see _held) become real departures the moment
+        // that round is over -- whichever way it ended. Before botSync, so the bot count
+        // is computed against the roster that is actually left.
+        if(!rosterHeld()) releaseHeldSeats();
         botSync(now); // keep the bot seats (testing switch) matched, and let them act
         if(_active == HA_GAME_TRIVIA)
             triviaTick(now);
@@ -7429,7 +7498,7 @@ private:
     bool spyfallAllSeen() {
         int n = 0;
         for(uint8_t i = 1; i <= HA_MAX_PLAYERS; i++) {
-            if(!_p[i].used || !_sf.inRound[i]) continue;
+            if(!_p[i].used || !_sf.inRound[i] || playerAway(i)) continue;
             n++;
             if(!_sf.seen[i]) return false;
         }
@@ -7513,8 +7582,8 @@ private:
         uint8_t start = _sf.nominator, pick = 0;
         for(int step = 1; step <= HA_MAX_PLAYERS; step++) {
             uint8_t i = (uint8_t)(((start + step - 1) % HA_MAX_PLAYERS) + 1);
-            if(_p[i].used && _sf.inRound[i] && !_sf.nominated[i]) {
-                pick = i;
+            if(_p[i].used && _sf.inRound[i] && !_sf.nominated[i] && !playerAway(i)) {
+                pick = i; // a held seat does not get a nomination turn to burn
                 break;
             }
         }
@@ -8093,7 +8162,7 @@ private:
         int drawing = 0;
         for(int k = 0; k < _fd.seats; k++) {
             uint8_t pid = _fd.seat[k];
-            if(!pid || !_p[pid].used) continue;
+            if(!pid || !_p[pid].used || playerAway(pid)) continue;
             drawing++;
             if(!_fd.done[pid]) return false;
         }
