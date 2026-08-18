@@ -1,3 +1,37 @@
+### v0.8.0 — upstream v1.8.0: far more memory headroom
+
+- **Much more room to breathe.** Upstream reworked how game state is held in
+  memory, and the effect on the Cardputer is large: static memory use drops by
+  19 KB, and the low point during startup — the moment WiFi comes up, where
+  phones used to fail to get an address — rises from 23 KB free to 88 KB. Free
+  memory during play goes from 99 KB to 119 KB, and the largest single block
+  from 36 KB to 48 KB, so there is less fragmentation as well.
+- **Reconnecting works on modern iPhones.** iOS randomises its WiFi address,
+  which could make a returning phone look like a stranger. Clients are now
+  recognised by a stable id instead.
+- **Spyfall no longer leaks the location.** When a player left and their slot
+  was reused, the next player could inherit the location — in the one game
+  whose entire point is that one person does not know it.
+- **Werewolf reads correctly again** in English and German; the strings were
+  double-encoded. The Fill the Blank and Spyfall packs were refreshed upstream.
+- Twenty games, unchanged. This release is about what happens underneath them.
+
+### Install
+
+Search for **"Hotspot Arcade"** in the **M5Burner** app or the **M5Launcher**
+catalog — one tap, no cables.
+
+**Or flash by hand.** Note that the address depends on your device: if
+M5Launcher manages the app, flash into the slot it created for Hotspot Arcade
+rather than assuming a fixed address, and read the partition table first.
+
+```
+esptool --chip esp32s3 --port <PORT> --baud 921600 read_flash 0x8000 0xc00 pt.bin
+esptool --chip esp32s3 --port <PORT> --baud 921600 write_flash <SLOT> hotspot-arcade-cardputer.ino.bin
+```
+
+Cardputer v1 (StampS3, 8MB). Full image and recovery are in the README.
+
 ### v0.7.0 — four new games, connection fixes, more cards
 
 - **Fill the Blank** (game 17) — a judge picks the funniest card. Playable with two: the hand is topped up from the deck.
