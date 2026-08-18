@@ -6,8 +6,8 @@ Tarik Caramanico). Nothing in `vendor/` is edited here -- see README.
 
 | | |
 | --- | --- |
-| commit | `6ca974099c56eaeadf43103920383c86ae393ee5` |
-| describe | `v1.8.0-15-g6ca9740` |
+| commit | `9a31a254cc38e40dd174dcd98840399d7279f30c` |
+| describe | `v1.8.0-16-g9a31a25` |
 | engine | `vendor/engine/` -- ha_proto.h, ha_json.h, ha_games.h |
 | web bundle | `vendor/web/` -- 1 file(s) |
 | content packs | `vendor/packs/` -- 90 pack(s) |
