@@ -651,6 +651,9 @@ struct WerewolfState {
     bool revealed[HA_MAX_PLAYERS + 1]; // role is public (died, or the game ended)
     int8_t kill[HA_MAX_PLAYERS + 1]; // a wolf's night target pid, -1 = not picked
     int8_t accuse[HA_MAX_PLAYERS + 1]; // a player's day vote pid, -1 = not voted
+    bool castSeer; // a seer was DEALT this game (stays true after they die)
+    bool castDoctor; // ...and a doctor. Published so narration can call every role
+                     // every night: skipping a call would announce a death.
     uint8_t seer; // the seer's pid this game, 0 = none left
     uint8_t seerTarget; // who the seer checked this night, 0 = nobody yet
     bool seerResult; // ...and whether they are a werewolf. Seer's payload only.
@@ -1615,6 +1618,8 @@ public:
             wwSee(pid, v); // seer's night check
         } else if(strcmp(type, "guard") == 0 && ha_json_int(json, "n", &v)) {
             wwGuard(pid, v); // doctor's night shield
+        } else if(strcmp(type, "narrator") == 0) {
+            wwSetNarrator(pid);
         } else if(strcmp(type, "accuse") == 0 && ha_json_int(json, "n", &v)) {
             wwAccuse(pid, v); // day vote
         } else if(strcmp(type, "seen") == 0) {
@@ -1721,6 +1726,10 @@ private:
     TriviaTopic _topics[TRIVIA_MAX_TOPICS] = {}; // trivia's content (its runtime state _t is in the union)
     uint8_t _topicCount = 0;
     uint8_t _packGame = 0; // HA_GAME_* of the pack currently being streamed, 0 = none
+    // Which phone reads the night out loud. Kept out of WerewolfState so the choice
+    // survives selectGame -- a table should not have to nominate a narrator again for
+    // every round. 0 = nobody has volunteered; the client then narrates on no phone.
+    uint8_t _wwNarrator = 0;
     // The eight content games' packs, lifted out of their state structs. They hold Strings (so
     // they cannot live in the POD union) and are streamed for every game up front regardless of
     // which one is active, so they must stay resident. Each game's runtime state is in the union.
@@ -6807,6 +6816,8 @@ private:
         if(wolves > cap) wolves = cap;
         _ww.seer = 0;
         _ww.doctor = 0;
+        _ww.castSeer = true; // every table size deals a seer
+        _ww.castDoctor = doc;
         _ww.dealt = (uint8_t)n;
         for(int i = 0; i < n; i++) {
             uint8_t pid = ord[i];
@@ -7060,6 +7071,14 @@ private:
         pushAll();
     }
 
+    // Any player may take the narration over, at any time -- the table sorts out who
+    // holds the phone, and a narrator whose battery died must not strand the room.
+    void wwSetNarrator(uint8_t pid) {
+        if(!_p[pid].used) return;
+        _wwNarrator = (_wwNarrator == pid) ? 0 : pid; // pressing it again hands it back
+        pushAll();
+    }
+
     void wwAccuse(uint8_t pid, int target) {
         if(_active != HA_GAME_WEREWOLF || _ww.pt.phase != 2 || _ww.stage != WW_S_DAY) return;
         if(_ww.role[pid] == 0 || !_ww.alive[pid]) return; // the dead do not vote
@@ -7218,6 +7237,7 @@ private:
         if(pt.phase == 0)
             return String("{\"t\":\"werewolf\",\"phase\":\"lobby\",\"you\":") + pid +
                    ",\"players\":" + partyPlayersJson(pt) + ",\"min\":" + WW_MIN_PLAYERS +
+                   ",\"narrator\":" + _wwNarrator +
                    ",\"enough\":" + (enoughPlayers(WW_MIN_PLAYERS) ? "true" : "false") + "}";
         if(pt.phase == 1)
             return String("{\"t\":\"werewolf\",\"phase\":\"countdown\",\"sec\":") +
@@ -7233,6 +7253,9 @@ private:
                    ",\"myrole\":" + _ww.role[pid] +
                    ",\"alive\":" + (_ww.alive[pid] ? "true" : "false") +
                    ",\"wolvesleft\":" + wwAliveWolves() + ",\"villagersleft\":" + wwAliveVillage() +
+                   ",\"narrator\":" + _wwNarrator +
+                   ",\"castseer\":" + (_ww.castSeer ? "true" : "false") +
+                   ",\"castdoc\":" + (_ww.castDoctor ? "true" : "false") +
                    ",\"players\":" + wwRosterJson(pid);
 
         if(_ww.stage == WW_S_NIGHT) {
