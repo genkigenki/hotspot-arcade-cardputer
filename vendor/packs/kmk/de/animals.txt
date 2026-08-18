@@ -1,5 +1,5 @@
 Pack: Tierreich
-Name: Löwe
+Name: Löwe/Löwin
 ---
 Name: Panda
 ---
@@ -11,27 +11,27 @@ Name: Faultier
 ---
 Name: Koala
 ---
-Name: Tiger
+Name: Tiger/Tigerin
 ---
-Name: Wolf
+Name: Wolf/Wölfin
 ---
-Name: Fuchs
+Name: Fuchs/Füchsin
 ---
 Name: Eule
 ---
-Name: Katze
+Name: Katze/Kater
 ---
-Name: Hund
+Name: Hund/Hündin
 ---
 Name: Pferd
 ---
-Name: Hase
+Name: Hase/Häsin
 ---
 Name: Igel
 ---
 Name: Otter
 ---
-Name: Elefant
+Name: Elefant/Elefantin
 ---
 Name: Giraffe
 ---
@@ -39,7 +39,7 @@ Name: Känguru
 ---
 Name: Eichhörnchen
 ---
-Name: Waschbär
+Name: Waschbär/Waschbärin
 ---
 Name: Erdmännchen
 ---
@@ -62,3 +62,139 @@ Name: Schmetterling
 Name: Chamäleon
 ---
 Name: Alpaka
+---
+Name: Bär/Bärin
+---
+Name: Eisbär/Eisbärin
+---
+Name: Elch
+---
+Name: Hirsch/Hirschkuh
+---
+Name: Wildschwein
+---
+Name: Dachs
+---
+Name: Biber
+---
+Name: Maulwurf
+---
+Name: Fledermaus
+---
+Name: Maus
+---
+Name: Hamster
+---
+Name: Meerschweinchen
+---
+Name: Frettchen
+---
+Name: Wiesel
+---
+Name: Stinktier
+---
+Name: Stachelschwein
+---
+Name: Ameisenbär
+---
+Name: Gürteltier
+---
+Name: Capybara
+---
+Name: Lama
+---
+Name: Kamel
+---
+Name: Esel/Eselin
+---
+Name: Ziege/Ziegenbock
+---
+Name: Schaf
+---
+Name: Kuh/Stier
+---
+Name: Schwein
+---
+Name: Huhn/Hahn
+---
+Name: Ente
+---
+Name: Gans
+---
+Name: Schwan
+---
+Name: Adler
+---
+Name: Falke
+---
+Name: Rabe
+---
+Name: Krähe
+---
+Name: Papagei
+---
+Name: Tukan
+---
+Name: Specht
+---
+Name: Kolibri
+---
+Name: Storch
+---
+Name: Reiher
+---
+Name: Pelikan
+---
+Name: Möwe
+---
+Name: Strauß
+---
+Name: Kranich
+---
+Name: Eisvogel
+---
+Name: Frosch
+---
+Name: Kröte
+---
+Name: Molch
+---
+Name: Schlange
+---
+Name: Kobra
+---
+Name: Krokodil
+---
+Name: Eidechse
+---
+Name: Gecko
+---
+Name: Leguan
+---
+Name: Tintenfisch
+---
+Name: Qualle
+---
+Name: Seestern
+---
+Name: Krabbe
+---
+Name: Hummer
+---
+Name: Seepferdchen
+---
+Name: Aal
+---
+Name: Orca
+---
+Name: Robbe
+---
+Name: Walross
+---
+Name: Zebra
+---
+Name: Nashorn
+---
+Name: Flusspferd
+---
+Name: Gepard

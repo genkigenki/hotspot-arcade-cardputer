@@ -62,3 +62,139 @@ Name: Elsa
 Name: Serena Williams
 ---
 Name: Aragorn
+---
+Name: Superman
+---
+Name: Ed Sheeran
+---
+Name: Sokrates
+---
+Name: Einhorn
+---
+Name: Lady Gaga
+---
+Name: Gollum
+---
+Name: Mozart
+---
+Name: Medusa
+---
+Name: Lionel Messi
+---
+Name: Luke Skywalker
+---
+Name: Rosa Parks
+---
+Name: Drache/Drachin
+---
+Name: Adele
+---
+Name: Voldemort
+---
+Name: Winston Churchill
+---
+Name: Meerjungfrau/-mann
+---
+Name: Emma Watson
+---
+Name: Pikachu
+---
+Name: Alan Turing
+---
+Name: Hexe/Hexer
+---
+Name: Billie Eilish
+---
+Name: Micky Maus
+---
+Name: Nelson Mandela
+---
+Name: Vampir/Vampirin
+---
+Name: Dua Lipa
+---
+Name: Indiana Jones
+---
+Name: Bruce Lee
+---
+Name: Troll/Trollin
+---
+Name: Margot Robbie
+---
+Name: Neo
+---
+Name: Marilyn Monroe
+---
+Name: Yeti
+---
+Name: Tom Holland
+---
+Name: Walter White
+---
+Name: Charlie Chaplin
+---
+Name: Zombie
+---
+Name: Pedro Pascal
+---
+Name: Sonic
+---
+Name: Amelia Earhart
+---
+Name: Alien
+---
+Name: Simone Biles
+---
+Name: Bilbo Beutlin
+---
+Name: Jane Goodall
+---
+Name: Roboter
+---
+Name: Lewis Hamilton
+---
+Name: Daenerys Targaryen
+---
+Name: Neil Armstrong
+---
+Name: Sphinx
+---
+Name: Idris Elba
+---
+Name: Schneewittchen
+---
+Name: Audrey Hepburn
+---
+Name: Pegasus
+---
+Name: Meryl Streep
+---
+Name: John Wick
+---
+Name: Muhammad Ali
+---
+Name: Golem
+---
+Name: Jenna Ortega
+---
+Name: Chewbacca
+---
+Name: Karl Marx
+---
+Name: Zerberus
+---
+Name: Usain Bolt
+---
+Name: Kratos
+---
+Name: Sigmund Freud
+---
+Name: Banshee
+---
+Name: Natalie Portman
+---
+Name: Wednesday Addams
+---
+Name: Pablo Picasso
+---
+Name: Walküre

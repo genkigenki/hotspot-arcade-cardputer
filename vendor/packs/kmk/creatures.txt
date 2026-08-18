@@ -62,3 +62,139 @@ Name: Sea serpent
 Name: Ice queen
 ---
 Name: Snow troll
+---
+Name: Basilisk
+---
+Name: Chimera
+---
+Name: Hydra
+---
+Name: Cerberus
+---
+Name: Medusa
+---
+Name: Siren
+---
+Name: Harpy
+---
+Name: Banshee
+---
+Name: Leprechaun
+---
+Name: Imp
+---
+Name: Ogre
+---
+Name: Orc
+---
+Name: Hobbit
+---
+Name: Dryad
+---
+Name: Nymph
+---
+Name: Satyr
+---
+Name: Faun
+---
+Name: Cupid
+---
+Name: Valkyrie
+---
+Name: Golem
+---
+Name: Gargoyle
+---
+Name: Skeleton
+---
+Name: Mummy
+---
+Name: Ghoul
+---
+Name: Shapeshifter
+---
+Name: Doppelganger
+---
+Name: Poltergeist
+---
+Name: Will-o-wisp
+---
+Name: Kelpie
+---
+Name: Selkie
+---
+Name: Merman
+---
+Name: Thunderbird
+---
+Name: Wyvern
+---
+Name: Salamander
+---
+Name: Firebird
+---
+Name: Kitsune
+---
+Name: Tanuki
+---
+Name: Oni
+---
+Name: Kappa
+---
+Name: Tengu
+---
+Name: Chupacabra
+---
+Name: Bigfoot
+---
+Name: Mothman
+---
+Name: Jackalope
+---
+Name: Kirin
+---
+Name: Manticore
+---
+Name: Bunyip
+---
+Name: Titan
+---
+Name: Leviathan
+---
+Name: Behemoth
+---
+Name: Wendigo
+---
+Name: Baba Yaga
+---
+Name: Rumpelstiltskin
+---
+Name: Krampus
+---
+Name: Tooth fairy
+---
+Name: Sandman
+---
+Name: Boogeyman
+---
+Name: Nixie
+---
+Name: Frost giant
+---
+Name: Stone troll
+---
+Name: Swamp witch
+---
+Name: Cloud giant
+---
+Name: Moon rabbit
+---
+Name: Star child
+---
+Name: Shadow cat
+---
+Name: Dream weaver
+---
+Name: Ink imp
+---
+Name: Bell spirit

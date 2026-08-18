@@ -62,3 +62,139 @@ Name: Butterfly
 Name: Chameleon
 ---
 Name: Alpaca
+---
+Name: Bear
+---
+Name: Polar bear
+---
+Name: Elk
+---
+Name: Deer
+---
+Name: Boar
+---
+Name: Badger
+---
+Name: Beaver
+---
+Name: Mole
+---
+Name: Bat
+---
+Name: Mouse
+---
+Name: Hamster
+---
+Name: Guinea pig
+---
+Name: Ferret
+---
+Name: Weasel
+---
+Name: Skunk
+---
+Name: Porcupine
+---
+Name: Anteater
+---
+Name: Armadillo
+---
+Name: Capybara
+---
+Name: Llama
+---
+Name: Camel
+---
+Name: Donkey
+---
+Name: Goat
+---
+Name: Sheep
+---
+Name: Cow
+---
+Name: Pig
+---
+Name: Chicken
+---
+Name: Duck
+---
+Name: Goose
+---
+Name: Swan
+---
+Name: Eagle
+---
+Name: Falcon
+---
+Name: Raven
+---
+Name: Crow
+---
+Name: Parrot
+---
+Name: Toucan
+---
+Name: Woodpecker
+---
+Name: Hummingbird
+---
+Name: Stork
+---
+Name: Heron
+---
+Name: Pelican
+---
+Name: Seagull
+---
+Name: Ostrich
+---
+Name: Crane
+---
+Name: Kingfisher
+---
+Name: Frog
+---
+Name: Toad
+---
+Name: Newt
+---
+Name: Snake
+---
+Name: Cobra
+---
+Name: Crocodile
+---
+Name: Lizard
+---
+Name: Gecko
+---
+Name: Iguana
+---
+Name: Squid
+---
+Name: Jellyfish
+---
+Name: Starfish
+---
+Name: Crab
+---
+Name: Lobster
+---
+Name: Seahorse
+---
+Name: Eel
+---
+Name: Orca
+---
+Name: Seal
+---
+Name: Walrus
+---
+Name: Zebra
+---
+Name: Rhino
+---
+Name: Hippo
+---
+Name: Cheetah

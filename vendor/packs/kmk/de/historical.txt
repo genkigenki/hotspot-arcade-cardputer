@@ -62,3 +62,139 @@ Name: Florence Nightingale
 Name: Christoph Kolumbus
 ---
 Name: Elisabeth I.
+---
+Name: Sokrates
+---
+Name: Platon
+---
+Name: Archimedes
+---
+Name: Hippokrates
+---
+Name: Pythagoras
+---
+Name: Konfuzius
+---
+Name: Buddha
+---
+Name: Nefertiti
+---
+Name: Ramses II.
+---
+Name: Hannibal
+---
+Name: Spartakus
+---
+Name: Nero
+---
+Name: Augustus
+---
+Name: Marcus Aurelius
+---
+Name: Attila
+---
+Name: Karl der Große
+---
+Name: Richard Löwenherz
+---
+Name: Saladin
+---
+Name: Marco Polo
+---
+Name: Johannes Gutenberg
+---
+Name: Michelangelo
+---
+Name: Raffael
+---
+Name: Kopernikus
+---
+Name: Ferdinand Magellan
+---
+Name: Martin Luther
+---
+Name: Heinrich VIII.
+---
+Name: Maria Stuart
+---
+Name: Francis Drake
+---
+Name: Rembrandt
+---
+Name: Johann Sebastian Bach
+---
+Name: Vivaldi
+---
+Name: Voltaire
+---
+Name: Benjamin Franklin
+---
+Name: George Washington
+---
+Name: Thomas Jefferson
+---
+Name: Marie Antoinette
+---
+Name: Goethe
+---
+Name: Schiller
+---
+Name: Jane Austen
+---
+Name: Charles Dickens
+---
+Name: Karl Marx
+---
+Name: Sitting Bull
+---
+Name: Harriet Tubman
+---
+Name: Frederick Douglass
+---
+Name: Louis Pasteur
+---
+Name: Gregor Mendel
+---
+Name: Sigmund Freud
+---
+Name: Carl Jung
+---
+Name: Thomas Edison
+---
+Name: Alexander Graham Bell
+---
+Name: Henry Ford
+---
+Name: Harry Houdini
+---
+Name: Charlie Chaplin
+---
+Name: Winston Churchill
+---
+Name: Alan Turing
+---
+Name: Rosalind Franklin
+---
+Name: Jane Goodall
+---
+Name: Neil Armstrong
+---
+Name: Juri Gagarin
+---
+Name: Martin Luther King
+---
+Name: Nelson Mandela
+---
+Name: Mutter Teresa
+---
+Name: Marilyn Monroe
+---
+Name: Audrey Hepburn
+---
+Name: Bruce Lee
+---
+Name: Muhammad Ali
+---
+Name: Pablo Picasso
+---
+Name: Claude Monet

@@ -127,6 +127,21 @@ static inline int haUtf8Len(const char* s) {
 #define KMK_CHOOSE_SECS 40 // chooser's window (safety timer)
 #define KMK_GUESS_SECS 30 // guessers' window (safety timer)
 #define KMK_REVEAL_MS 7000
+// Sizing: a session shows KMK_ROUNDS * 3 = 18 of the pack's names, so at 32 a second
+// session at the same table repeats most of the first -- and repetition is exactly what
+// this game has nothing else to fall back on, since the fun is judging people you have
+// not judged yet. So KMK stops borrowing PACK_MAX_ITEMS (32) and declares its own caps,
+// the way FB_MAX_* and SPYFALL_MAX_* already do for the same reason: the shared number
+// fits the shape of a word pack, not of this one.
+//
+// Depth is unusually cheap here because an item is ONE String -- not a question's six
+// fields (Trivia), not two prompts (WYR/Spectrum), not two decks (Fill the Blank). At
+// 6 x (1 name + 104) = 630 Strings this is ~10.1 KB of static state against the 4.2 KB
+// the shared cap cost: +5.9 KB buys 3.25x the content. Raising PACK_MAX_ITEMS instead
+// would have charged all six sharing games, and WYR/Spectrum twice over, for depth only
+// this one needs -- 16.4 KB just to reach 48.
+#define KMK_MAX_PACKS 6 // one per shipped pack file (animals, creatures, famous, fiction, historical, mix)
+#define KMK_MAX_NAMES 104
 
 // Secrets: each round shows a yes/no question. Everyone secretly predicts how many
 // of the N joined players will answer "yes" (0..N), then secretly answers. Only the
@@ -518,9 +533,15 @@ struct SpectrumState {
     int gained[HA_MAX_PLAYERS + 1]; // points earned this round (shown on reveal)
 };
 
-// Kiss Marry Kill: reuses WordPack (a flat list of names) and the Party skeleton.
-// Labels are 0 = kiss, 1 = marry, 2 = kill; each round has three people and the
-// assignment is a permutation of those three labels over them.
+// Kiss Marry Kill: a flat list of names, deeper than WordPack allows (see KMK_MAX_NAMES),
+// plus the Party skeleton. Labels are 0 = kiss, 1 = marry, 2 = kill; each round has three
+// people and the assignment is a permutation of those three labels over them.
+struct KmkPack {
+    String name;
+    String names[KMK_MAX_NAMES];
+    uint8_t count; // <= KMK_MAX_NAMES (104), so a byte is still enough
+};
+
 struct KmkState {
     Party pt;
     // Content packs live in Engine::_kmkPacks / _kmkPackCount, kept out of the game-state union.
@@ -1078,7 +1099,7 @@ public:
         _dPackCount = 0;
         for(int i = 0; i < TRIVIA_MAX_TOPICS; i++) _specPacks[i] = WyrPack{};
         _specPackCount = 0;
-        for(int i = 0; i < TRIVIA_MAX_TOPICS; i++) _kmkPacks[i] = WordPack{};
+        for(int i = 0; i < KMK_MAX_PACKS; i++) _kmkPacks[i] = KmkPack{};
         _kmkPackCount = 0;
         for(int i = 0; i < TRIVIA_MAX_TOPICS; i++) _secretsPacks[i] = WordPack{};
         _secretsPackCount = 0;
@@ -1118,8 +1139,8 @@ public:
                 _specPackCount++;
             }
         } else if(game == HA_GAME_KMK) {
-            if(_kmkPackCount < TRIVIA_MAX_TOPICS) {
-                _kmkPacks[_kmkPackCount] = WordPack{};
+            if(_kmkPackCount < KMK_MAX_PACKS) {
+                _kmkPacks[_kmkPackCount] = KmkPack{};
                 _kmkPacks[_kmkPackCount].name = name;
                 _kmkPackCount++;
             }
@@ -1236,11 +1257,11 @@ public:
     // Map a Kiss Marry Kill pack file's {name} key into the current pack.
     bool kmkLoadItem(const char* json) {
         if(_kmkPackCount == 0) return false;
-        WordPack& p = _kmkPacks[_kmkPackCount - 1];
-        if(p.count >= PACK_MAX_ITEMS) return false;
+        KmkPack& p = _kmkPacks[_kmkPackCount - 1];
+        if(p.count >= KMK_MAX_NAMES) return false;
         char buf[40];
         if(!ha_json_str(json, "name", buf, sizeof(buf)) || !buf[0]) return false;
-        p.words[p.count++] = buf;
+        p.names[p.count++] = buf;
         return true;
     }
 
@@ -1632,7 +1653,7 @@ private:
     WyrPack  _wyrPacks[TRIVIA_MAX_TOPICS] = {};     uint8_t _wyrPackCount = 0;     // Would You Rather
     WordPack _scrPacks[TRIVIA_MAX_TOPICS] = {};     uint8_t _scrPackCount = 0;     // Word Scramble
     WyrPack  _specPacks[TRIVIA_MAX_TOPICS] = {};    uint8_t _specPackCount = 0;    // Spectrum
-    WordPack _kmkPacks[TRIVIA_MAX_TOPICS] = {};     uint8_t _kmkPackCount = 0;     // Kiss Marry Kill
+    KmkPack  _kmkPacks[KMK_MAX_PACKS] = {};         uint8_t _kmkPackCount = 0;     // Kiss Marry Kill (own caps)
     WordPack _secretsPacks[TRIVIA_MAX_TOPICS] = {}; uint8_t _secretsPackCount = 0; // Secrets
     FillBlankPack _fbPacks[FB_MAX_PACKS] = {};      uint8_t _fbPackCount = 0;      // Fill the Blank
     SpyPack  _sfPacks[SPYFALL_MAX_PACKS] = {};      uint8_t _sfPackCount = 0;      // Spyfall
@@ -2108,7 +2129,7 @@ private:
     }
 
     int triviaWinningTopic() {
-        int votes[TRIVIA_MAX_TOPICS] = {0};
+        int votes[KMK_MAX_PACKS] = {0};
         int total = 0;
         for(uint8_t i = 1; i <= HA_MAX_PLAYERS; i++)
             if(_p[i].used && _t.vote[i] >= 0 && _t.vote[i] < _topicCount) {
@@ -2119,7 +2140,7 @@ private:
         int best = 0;
         for(int i = 1; i < _topicCount; i++)
             if(votes[i] > votes[best]) best = i;
-        int tie[TRIVIA_MAX_TOPICS], tn = 0;
+        int tie[KMK_MAX_PACKS], tn = 0;
         for(int i = 0; i < _topicCount; i++)
             if(votes[i] == votes[best]) tie[tn++] = i;
         return tie[(int)random(tn)];
@@ -3504,7 +3525,7 @@ private:
             String s = String("{\"t\":\"wyr\",\"phase\":\"lobby\",\"you\":") + pid +
                        ",\"players\":" + partyPlayersJson(pt);
             s += ",\"packs\":[";
-            int votes[TRIVIA_MAX_TOPICS] = {0};
+            int votes[KMK_MAX_PACKS] = {0};
             for(uint8_t i = 1; i <= HA_MAX_PLAYERS; i++)
                 if(_p[i].used && _wyr.vote[i] >= 0 && _wyr.vote[i] < _wyrPackCount) votes[_wyr.vote[i]]++;
             for(int i = 0; i < _wyrPackCount; i++) {
@@ -5465,7 +5486,7 @@ private:
 
     void kmkNextRound(uint32_t now) {
         Party& pt = _kmk.pt;
-        WordPack& pk = _kmkPacks[_kmk.pack];
+        KmkPack& pk = _kmkPacks[_kmk.pack];
         if(pt.round >= KMK_ROUNDS || pk.count < 3) {
             pt.phase = 4; // final (need at least three names to play)
             pushAll();
@@ -5632,7 +5653,7 @@ private:
         if(pt.phase == 4)
             return String("{\"t\":\"kmk\",\"phase\":\"final\",\"board\":") + triviaBoard() + "}";
 
-        WordPack& pk = _kmkPacks[_kmk.pack];
+        KmkPack& pk = _kmkPacks[_kmk.pack];
         bool me = (pid == _kmk.chooser);
         bool reveal = (pt.phase == 3);
         const char* stage = reveal ? "reveal" : (_kmk.stage == 0 ? "choose" : "guess");
@@ -5643,7 +5664,7 @@ private:
                    ",\"people\":[";
         for(int i = 0; i < 3; i++) {
             if(i) s += ",";
-            s += "\"" + ha_json_escape(pk.words[_kmk.person[i]].c_str()) + "\"";
+            s += "\"" + ha_json_escape(pk.names[_kmk.person[i]].c_str()) + "\"";
         }
         s += "]";
         // The chooser sees their own picks during the guess stage; on reveal everyone
