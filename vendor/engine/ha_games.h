@@ -215,6 +215,29 @@ static inline int haUtf8Len(const char* s) {
 #define WW_WOLF 2
 #define WW_SEER 3
 #define WW_DOCTOR 4
+#define WW_HUNTER 5
+#define WW_WITCH 6
+#define WW_CUPID 7
+// Table sizes each extra role joins at. Kept apart from WW_MIN_PLAYERS because every
+// special seat is a villager seat spent: deal them too early and a five-player table is
+// all specials and no village.
+#define WW_HUNTER_MIN 7
+#define WW_WITCH_MIN 9
+#define WW_CUPID_MIN 11
+
+// The night is ONE simultaneous window in this engine (see wwNight), not a sequence of
+// role calls, so two roles are adapted rather than ported literally:
+//
+//   Hunter -- names their revenge target ahead of time ("who would you take with you")
+//   instead of being woken when they die. No pause after a death, and the choice still
+//   costs them: it is made blind, before they know who dies.
+//
+//   Witch -- her potions protect and poison a NAMED player for the night, rather than
+//   being shown the wolves' victim first. Being shown the victim needs the wolves to
+//   have finished, which a simultaneous night cannot offer.
+//
+// Both are documented in docs/PROTOCOL.md; the alternative was a stack of sub-stages,
+// each with its own timer, on a game whose night is already the longest in the app.
 // Sub-phases inside Party::phase 2 (playing).
 #define WW_S_ROLES 0
 #define WW_S_NIGHT 1
@@ -657,6 +680,16 @@ struct WerewolfState {
     uint8_t seer; // the seer's pid this game, 0 = none left
     uint8_t seerTarget; // who the seer checked this night, 0 = nobody yet
     bool seerResult; // ...and whether they are a werewolf. Seer's payload only.
+    uint8_t hunter; // the hunter's pid, 0 = none dealt / dead
+    int8_t hunterMark; // who the hunter takes with them, -1 = nobody named yet
+    uint8_t witch; // the witch's pid, 0 = none dealt / dead
+    int8_t witchSave; // who her healing potion protects tonight, -1 = unused
+    int8_t witchKill; // ...and who the poison takes, -1 = unused
+    bool witchSaveGone; // each potion is once per GAME, not per night
+    bool witchKillGone;
+    uint8_t cupid; // cupid's pid, 0 = none dealt / dead
+    uint8_t loveA, loveB; // the pair cupid tied on night one, 0 = not tied yet
+    bool castHunter, castWitch, castCupid; // dealt this game (see castSeer)
     uint8_t doctor; // the doctor's pid this game, 0 = none dealt / none left
     uint8_t docTarget; // who the doctor is shielding tonight. Doctor's payload only.
     uint8_t docLast; // and last night's shield, which may not be repeated
@@ -1618,6 +1651,14 @@ public:
             wwSee(pid, v); // seer's night check
         } else if(strcmp(type, "guard") == 0 && ha_json_int(json, "n", &v)) {
             wwGuard(pid, v); // doctor's night shield
+        } else if(strcmp(type, "hunt") == 0 && ha_json_int(json, "n", &v)) {
+            wwHunt(pid, v);
+        } else if(strcmp(type, "potion") == 0 && ha_json_int(json, "n", &v)) {
+            const char* sp = ha_json_find(json, "save");
+            wwPotion(pid, v, sp && strncmp(sp, "true", 4) == 0);
+        } else if(strcmp(type, "pair") == 0) {
+            int a = 0, b = 0;
+            if(ha_json_int(json, "a", &a) && ha_json_int(json, "b", &b)) wwPair(pid, a, b);
         } else if(strcmp(type, "narrator") == 0) {
             wwSetNarrator(pid);
         } else if(strcmp(type, "accuse") == 0 && ha_json_int(json, "n", &v)) {
@@ -6808,7 +6849,11 @@ private:
             ord[j] = t;
         }
         bool doc = (n >= WW_DOCTOR_MIN);
-        int specials = doc ? 2 : 1; // the seer, and the doctor once the table is big
+        bool hun = (n >= WW_HUNTER_MIN);
+        bool wit = (n >= WW_WITCH_MIN);
+        bool cup = (n >= WW_CUPID_MIN);
+        // the seer always, then one more special per step up in table size
+        int specials = 1 + (doc ? 1 : 0) + (hun ? 1 : 0) + (wit ? 1 : 0) + (cup ? 1 : 0);
         int cap = (n - 1) / 2;
         if(cap > n - specials - 1) cap = n - specials - 1;
         int wolves = n / 4;
@@ -6818,6 +6863,10 @@ private:
         _ww.doctor = 0;
         _ww.castSeer = true; // every table size deals a seer
         _ww.castDoctor = doc;
+        _ww.hunter = 0; _ww.hunterMark = -1; _ww.castHunter = hun;
+        _ww.witch = 0; _ww.witchSave = -1; _ww.witchKill = -1;
+        _ww.witchSaveGone = false; _ww.witchKillGone = false; _ww.castWitch = wit;
+        _ww.cupid = 0; _ww.loveA = 0; _ww.loveB = 0; _ww.castCupid = cup;
         _ww.dealt = (uint8_t)n;
         for(int i = 0; i < n; i++) {
             uint8_t pid = ord[i];
@@ -6831,6 +6880,15 @@ private:
             } else if(doc && i == wolves + 1) {
                 _ww.role[pid] = WW_DOCTOR;
                 _ww.doctor = pid;
+            } else if(hun && i == wolves + 1 + (doc ? 1 : 0)) {
+                _ww.role[pid] = WW_HUNTER;
+                _ww.hunter = pid;
+            } else if(wit && i == wolves + 1 + (doc ? 1 : 0) + (hun ? 1 : 0)) {
+                _ww.role[pid] = WW_WITCH;
+                _ww.witch = pid;
+            } else if(cup && i == wolves + 1 + (doc ? 1 : 0) + (hun ? 1 : 0) + (wit ? 1 : 0)) {
+                _ww.role[pid] = WW_CUPID;
+                _ww.cupid = pid;
             } else {
                 _ww.role[pid] = WW_VILLAGER;
             }
@@ -6846,6 +6904,13 @@ private:
         if(_ww.role[pid] == WW_WOLF) return !wwQuietNight() && _ww.kill[pid] < 0;
         if(_ww.role[pid] == WW_SEER) return _ww.seerTarget == 0;
         if(_ww.role[pid] == WW_DOCTOR) return _ww.docTarget == 0;
+        // The hunter only owes an answer until they have named someone; after that the
+        // mark stands for the rest of the game and they sleep like a villager.
+        if(_ww.role[pid] == WW_HUNTER) return _ww.hunterMark < 0;
+        // Cupid acts once, on night one.
+        if(_ww.role[pid] == WW_CUPID) return _ww.pt.round <= 1 && !_ww.loveA;
+        // The witch may always pass -- her potions are once per game, so "nothing
+        // tonight" is a real move and must not hold the night open.
         return false;
     }
 
@@ -6933,24 +6998,41 @@ private:
         }
     }
 
+    // The lovers win as a pair if they are the last two standing -- ahead of both the
+    // village and the wolves, and regardless of what either of them was dealt. Cupid's
+    // whole point: a wolf and a villager tied together are playing their own game.
+    bool wwLoversWin() {
+        if(!_ww.loveA || !_ww.loveB) return false;
+        if(!_ww.alive[_ww.loveA] || !_ww.alive[_ww.loveB]) return false;
+        return wwAliveInGame() == 2;
+    }
+
     // Villagers win when the last werewolf is out; werewolves win as soon as they
     // are no longer outnumbered (from there they can force any lynch they like).
     // Every player still alive on the winning side scores 1 -- surviving is the
     // whole job -- so the shared leaderboard keeps its meaning across games.
     bool wwCheckEnd(uint32_t now) {
         int w = wwAliveWolves(), v = wwAliveVillage();
-        if(w > 0 && w < v) return false;
-        _ww.winner = (w == 0) ? WW_VILLAGER : WW_WOLF;
+        bool lovers = wwLoversWin();
+        if(!lovers && w > 0 && w < v) return false;
+        _ww.winner = lovers ? WW_CUPID : ((w == 0) ? WW_VILLAGER : WW_WOLF);
         for(uint8_t i = 1; i <= HA_MAX_PLAYERS; i++) {
             if(!_p[i].used || _ww.role[i] == 0) continue;
             _ww.revealed[i] = true; // the reckoning: every role is public now
             if(!_ww.alive[i]) continue;
-            if((_ww.role[i] == WW_WOLF) != (_ww.winner == WW_WOLF)) continue;
+            // Lovers taking it means exactly the two of them score, whatever they were
+            // dealt -- a wolf who fell in love wins with their villager, not their pack.
+            if(lovers) {
+                if(i != _ww.loveA && i != _ww.loveB) continue;
+            } else if((_ww.role[i] == WW_WOLF) != (_ww.winner == WW_WOLF)) {
+                continue;
+            }
             _p[i].score += 1;
             haUartScore(i, 1, "werewolf");
         }
         haUartRoundResult(
-            String("{\"werewolf\":\"") + (_ww.winner == WW_WOLF ? "wolves" : "villagers") +
+            String("{\"werewolf\":\"") +
+            (_ww.winner == WW_CUPID ? "lovers" : _ww.winner == WW_WOLF ? "wolves" : "villagers") +
             " win\"}");
         _ww.pt.phase = 4;
         _ww.pt.deadline = now;
@@ -6979,6 +7061,26 @@ private:
         pushAll();
     }
 
+    // Every death goes through here, because two rules chain off one: the lovers die
+    // together, and the hunter fires on the way down. `depth` stops a pair of lovers who
+    // are also hunters from recursing forever.
+    void wwSlay(uint8_t pid, int depth = 0) {
+        if(!pid || !_p[pid].used || !_ww.alive[pid] || depth > 4) return;
+        _ww.alive[pid] = false;
+        _ww.revealed[pid] = true; // a body's role is public
+        // The hunter's parting shot, named earlier in the night (see WW_HUNTER above).
+        if(_ww.role[pid] == WW_HUNTER && _ww.hunterMark > 0) {
+            int mark = _ww.hunterMark;
+            _ww.hunterMark = -1; // fires once
+            wwSlay((uint8_t)mark, depth + 1);
+        }
+        // Lovers: neither outlives the other.
+        if(_ww.loveA && _ww.loveB) {
+            if(pid == _ww.loveA) wwSlay(_ww.loveB, depth + 1);
+            else if(pid == _ww.loveB) wwSlay(_ww.loveA, depth + 1);
+        }
+    }
+
     void wwResolveNight(uint32_t now) {
         uint8_t v = wwQuietNight() ? 0 : wwNightVictim();
         if(wwQuietNight()) {
@@ -6988,14 +7090,26 @@ private:
         } else if(_ww.docTarget && _ww.docTarget == v) {
             _ww.dawnKind = WW_D_SAVED; // the doctor was standing in the doorway
             v = 0;
+        } else if(_ww.witchSave > 0 && (uint8_t)_ww.witchSave == v) {
+            _ww.dawnKind = WW_D_SAVED; // the healing potion, spent on the right player
+            v = 0;
         } else {
             _ww.dawnKind = WW_D_KILLED;
         }
         _ww.victim = v;
-        if(v) {
-            _ww.alive[v] = false;
-            _ww.revealed[v] = true; // a body's role is public
+        if(v) wwSlay(v);
+        // The poison kills whether or not the wolves managed anything. Resolved after the
+        // wolves so a poisoned player cannot also be "saved" by a potion aimed elsewhere.
+        if(_ww.witchKill > 0) {
+            wwSlay((uint8_t)_ww.witchKill);
+            if(!_ww.victim) _ww.victim = (uint8_t)_ww.witchKill; // dawn has something to report
+            if(_ww.dawnKind == WW_D_QUIET || _ww.dawnKind == WW_D_NOKILL)
+                _ww.dawnKind = WW_D_KILLED;
         }
+        if(_ww.witchSave > 0) _ww.witchSaveGone = true; // spent, right target or not
+        if(_ww.witchKill > 0) _ww.witchKillGone = true;
+        _ww.witchSave = -1;
+        _ww.witchKill = -1;
         _ww.docLast = _ww.docTarget; // no shielding the same player twice running
         wwLog(v, _ww.dawnKind, 0, false);
         _ww.stage = WW_S_DAWN;
@@ -7019,8 +7133,7 @@ private:
     void wwResolveDay(uint32_t now) {
         _ww.lynched = wwDayOutcast();
         if(_ww.lynched) {
-            _ww.alive[_ww.lynched] = false;
-            _ww.revealed[_ww.lynched] = true;
+            wwSlay(_ww.lynched); // the hunter fires, and a lover follows
         }
         wwLog(0, 0, _ww.lynched, true);
         _ww.stage = WW_S_DUSK;
@@ -7060,6 +7173,45 @@ private:
 
     // The doctor's shield. Self-protection is allowed (the usual default), but the
     // same player may not be shielded two nights running -- including themselves.
+    // The hunter names their revenge target. Blind, before they know who dies: the
+    // choice costs something precisely because it is made early.
+    void wwHunt(uint8_t pid, int target) {
+        if(_active != HA_GAME_WEREWOLF || _ww.pt.phase != 2 || _ww.stage != WW_S_NIGHT) return;
+        if(_ww.role[pid] != WW_HUNTER || !_ww.alive[pid]) return;
+        if(_ww.hunterMark > 0) return; // named once, and it stands
+        if(target < 1 || target > HA_MAX_PLAYERS || !_p[target].used || target == pid) return;
+        if(!_ww.alive[target] || _ww.role[target] == 0) return;
+        _ww.hunterMark = (int8_t)target;
+        pushAll();
+    }
+
+    // A potion. save = true is the healing one, false the poison; each is once per game.
+    void wwPotion(uint8_t pid, int target, bool save) {
+        if(_active != HA_GAME_WEREWOLF || _ww.pt.phase != 2 || _ww.stage != WW_S_NIGHT) return;
+        if(_ww.role[pid] != WW_WITCH || !_ww.alive[pid]) return;
+        if(save ? _ww.witchSaveGone : _ww.witchKillGone) return;
+        if(save ? (_ww.witchSave > 0) : (_ww.witchKill > 0)) return; // one use per night
+        if(target < 1 || target > HA_MAX_PLAYERS || !_p[target].used) return;
+        if(!_ww.alive[target] || _ww.role[target] == 0) return;
+        if(save) _ww.witchSave = (int8_t)target;
+        else _ww.witchKill = (int8_t)target;
+        pushAll();
+    }
+
+    // Cupid ties two players on night one. They are told they are in love, and nothing
+    // else -- being a lover is not a role, and neither learns the other's.
+    void wwPair(uint8_t pid, int a, int b) {
+        if(_active != HA_GAME_WEREWOLF || _ww.pt.phase != 2 || _ww.stage != WW_S_NIGHT) return;
+        if(_ww.role[pid] != WW_CUPID || !_ww.alive[pid]) return;
+        if(_ww.loveA || _ww.pt.round > 1) return; // once, on the first night
+        if(a == b) return;
+        if(a < 1 || a > HA_MAX_PLAYERS || !_p[a].used || !_ww.alive[a] || _ww.role[a] == 0) return;
+        if(b < 1 || b > HA_MAX_PLAYERS || !_p[b].used || !_ww.alive[b] || _ww.role[b] == 0) return;
+        _ww.loveA = (uint8_t)a;
+        _ww.loveB = (uint8_t)b;
+        pushAll();
+    }
+
     void wwGuard(uint8_t pid, int target) {
         if(_active != HA_GAME_WEREWOLF || _ww.pt.phase != 2 || _ww.stage != WW_S_NIGHT) return;
         if(_ww.role[pid] != WW_DOCTOR || !_ww.alive[pid]) return;
@@ -7244,7 +7396,8 @@ private:
                    partyCountdownSec(pt) + "}";
         if(pt.phase == 4)
             return String("{\"t\":\"werewolf\",\"phase\":\"final\",\"you\":") + pid +
-                   ",\"winner\":\"" + (_ww.winner == WW_WOLF ? "wolves" : "villagers") +
+                   ",\"winner\":\"" +
+                   (_ww.winner == WW_CUPID ? "lovers" : _ww.winner == WW_WOLF ? "wolves" : "villagers") +
                    "\",\"myrole\":" + _ww.role[pid] + ",\"players\":" + wwRosterJson(pid) +
                    ",\"log\":" + wwLogJson() + ",\"board\":" + triviaBoard() + "}";
 
@@ -7256,6 +7409,9 @@ private:
                    ",\"narrator\":" + _wwNarrator +
                    ",\"castseer\":" + (_ww.castSeer ? "true" : "false") +
                    ",\"castdoc\":" + (_ww.castDoctor ? "true" : "false") +
+                   ",\"casthunter\":" + (_ww.castHunter ? "true" : "false") +
+                   ",\"castwitch\":" + (_ww.castWitch ? "true" : "false") +
+                   ",\"castcupid\":" + (_ww.castCupid ? "true" : "false") +
                    ",\"players\":" + wwRosterJson(pid);
 
         if(_ww.stage == WW_S_NIGHT) {
@@ -7294,6 +7450,41 @@ private:
                 s += _ww.docTarget;
                 s += ",\"lastguard\":";
                 s += _ww.docLast;
+            }
+            // Each of the three added roles sees only its own state, for the same reason
+            // the pack tally is wolves-only: a villager's payload must carry no trace
+            // that any of this is happening.
+            if(_ww.role[pid] == WW_HUNTER && _ww.alive[pid]) {
+                s += ",\"mymark\":";
+                s += (int)_ww.hunterMark;
+            }
+            if(_ww.role[pid] == WW_WITCH && _ww.alive[pid]) {
+                s += ",\"mysave\":";
+                s += (int)_ww.witchSave;
+                s += ",\"mypoison\":";
+                s += (int)_ww.witchKill;
+                s += ",\"savegone\":";
+                s += _ww.witchSaveGone ? "true" : "false";
+                s += ",\"poisongone\":";
+                s += _ww.witchKillGone ? "true" : "false";
+            }
+            if(_ww.role[pid] == WW_CUPID && _ww.alive[pid]) {
+                s += ",\"tiedA\":";
+                s += _ww.loveA;
+                s += ",\"tiedB\":";
+                s += _ww.loveB;
+            }
+        }
+        // Being in love is not a role and does not reveal the other's: each lover is told
+        // only who they are tied to, and only in their own payload.
+        if(_ww.loveA && (pid == _ww.loveA || pid == _ww.loveB)) {
+            uint8_t other = (pid == _ww.loveA) ? _ww.loveB : _ww.loveA;
+            if(_p[other].used) {
+                s += ",\"lover\":{\"pid\":";
+                s += other;
+                s += ",\"nick\":\"";
+                s += ha_json_escape(_p[other].nick);
+                s += "\"}";
             }
         }
         // The seer's reading, from the moment they look until the next night falls
