@@ -180,7 +180,7 @@ static void haUiBegin() {
 // dozen builds in an evening, "it does not work" is unanswerable unless we both know
 // which one. A git hash is more precise and useless out loud; a small number you can
 // read off the screen and say is worth more here.
-#define HA_BUILD_NO 43
+#define HA_BUILD_NO 44
 
 // The title the header last drew, so the heap ticker can refresh JUST the header
 // strip in place. Redrawing the whole screen every 2s was fine while the offscreen
@@ -257,9 +257,14 @@ static void haUiDrawScoreCols(lgfx::LovyanGFX* g, uint8_t* order, int n, int top
         int y = top + row * rowH;
         const HaHostPlayer& p = haUiSnap.p[order[i]];
         g->setTextColor(i == 0 ? HA_ORANGE : TFT_WHITE, TFT_BLACK);
-        char nk[10], cell[24];
+        char nk[10], cell[32];
         snprintf(nk, sizeof(nk), "%s", p.nick); // clip nick to ~9 chars per column
-        snprintf(cell, sizeof(cell), "%d.%s:%ld", i + 1, nk, (long)p.score);
+        // "score" is this game; the evening's cross-game total rides along in brackets
+        // once anyone has one (upstream v1.9.0 scores the evening, not just the game).
+        if(p.total)
+            snprintf(cell, sizeof(cell), "%d.%s:%ld (%ld)", i + 1, nk, (long)p.score, (long)p.total);
+        else
+            snprintf(cell, sizeof(cell), "%d.%s:%ld", i + 1, nk, (long)p.score);
         g->drawString(cell, x, y);
     }
 }

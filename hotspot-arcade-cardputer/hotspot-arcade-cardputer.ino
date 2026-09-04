@@ -21,6 +21,15 @@
 #include <esp_wifi.h>
 #include <lwip/etharp.h>
 #include <esp_ota_ops.h>
+// DHCP server options (see apAnnouncePortal). dhcpserver.h moved between IDF lines;
+// on the 3.x core it is the first path. The fallback define is upstream's.
+#if __has_include(<dhcpserver/dhcpserver.h>)
+#include <dhcpserver/dhcpserver.h>
+#elif __has_include(<lwip/apps/dhcpserver/dhcpserver.h>)
+#include <lwip/apps/dhcpserver/dhcpserver.h>
+#else
+#define OFFER_DNS 0x02 // DHCP server "also send option 6"
+#endif
 #include <SD.h>
 #include <SPI.h>
 #include <M5Cardputer.h>
@@ -49,6 +58,12 @@
 // 10 is the ESP32-S3 softAP hardware maximum (ESP_WIFI_MAX_CONN_NUM). More phones
 // than this cannot associate no matter what -- the chip, not the code, is the cap.
 #define AP_MAX_CONN 10
+
+// Where the RFC 8908 Captive Portal API lives. Advertised in DHCP option 114 and served
+// by ArcadeHandler; deliberately not "/", which is the app itself. (Ported from upstream
+// v1.9.0, whose commit message explains the whole thing in detail.)
+#define HA_CAPTIVE_API_PATH "/captive-api"
+static bool captiveApiOk = false; // did option 114 go out? shown in the event log
 
 // ---- host speaker: short jingles, respecting the audio level set in the UI ----
 // 0 = off, 1 = low, 2 = high. Stored here; the UI settings screen changes it.
@@ -146,6 +161,11 @@ void haUartLeave(uint8_t pid) {
 void haUartScore(uint8_t pid, int delta, const char* reason) {
     (void)reason;
     haHostScore(pid, delta);
+}
+// Cross-game total (upstream v1.9.0): sent ABSOLUTE whenever it moves -- a game
+// finish, a 1v1 win, a rejoin restore, a host reset -- so the mirror cannot drift.
+void haUartTotal(uint8_t pid, int32_t total) {
+    haHostTotal(pid, total);
 }
 void haUartEvent(const String& json) {
     // Upstream PR #18: the phones can vote the game away from under the host, without
@@ -463,6 +483,18 @@ public:
                 haNote("~ Seite: .%u laedt", (unsigned)(ip >> 24));
             }
         }
+        // RFC 8908 Captive Portal API: what DHCP option 114 points at. NOT the portal
+        // page -- a tiny JSON document about the network's captive state. Answering it
+        // with the app's HTML makes the phone discard the mechanism and fall back to
+        // probe sniffing (the popup still appears, the persistent "Log In" entry never).
+        if(request->url() == HA_CAPTIVE_API_PATH) {
+            AsyncWebServerResponse* r = request->beginResponse(
+                200, "application/captive+json",
+                "{\"captive\":true,\"user-portal-url\":\"http://192.168.4.1/\"}");
+            r->addHeader("Cache-Control", "no-store");
+            request->send(r);
+            return;
+        }
         const HaBakedFile* a = haFindFile(request->url().c_str());
         if(!a && HA_BAKED_FILE_COUNT) a = &HA_BAKED_FILES[0]; // captive probes -> the app
         if(!a) {
@@ -506,6 +538,12 @@ static void onWsEvent(
         // still plenty to clear a ghost voter before the next game-change vote.
         client->keepAlivePeriod(30);
         client->client()->setAckTimeout(15000);
+        // Every push is a whole snapshot (pushAll sends lobby + full game state, never a
+        // delta), so a frame that goes missing is repaired by the next one. The library's
+        // default is the opposite trade: a full send queue CLOSES the connection -- on a
+        // phone that dozed for a second, the difference between a stutter and losing your
+        // seat mid-round. Discard the frame instead. (Upstream v1.9.0, PR #28.)
+        client->setCloseClientOnQueueFull(false);
         haNote("~ Socket: .%u offen", (unsigned)((uint32_t)client->remoteIP() >> 24));
     } else if(type == WS_EVT_DISCONNECT) {
         haNote("~ Socket zu (#%u)", (unsigned)client->id());
@@ -538,6 +576,39 @@ static void installHandlers() {
     server.addHandler(new ArcadeHandler()).setFilter(ON_AP_FILTER);
 }
 
+// Tell joining phones two things at once: who resolves names here (DHCP option 6), and
+// where the portal is (option 114, RFC 8910). Both need the DHCP server stopped to set,
+// so they share one restart.
+//
+// Option 6 is the bug that hid for months: the AP leased an address and a gateway but
+// NO resolver, because esp_netif's DHCP server does not offer DNS unless asked and
+// Arduino's softAPConfig() never asks. A phone then could not resolve captive.apple.com
+// (iOS) / connectivitycheck.gstatic.com (Android), so the probe FAILED instead of being
+// intercepted -- "no internet", no portal -- while typing 192.168.4.1 worked all along
+// because an IP needs no lookup. The wildcard DNSServer was always ready; nothing told
+// the phones to ask it. Option 114 hands the phone the portal URL outright, so iOS keeps
+// a persistent "Log In" entry in WiFi settings instead of a popup you can dismiss and
+// never find again.
+static void apAnnouncePortal() {
+    esp_netif_t* ap = esp_netif_get_handle_from_ifkey("WIFI_AP_DEF");
+    if(!ap) return;
+    esp_netif_dns_info_t dns = {};
+    dns.ip.type = ESP_IPADDR_TYPE_V4;
+    dns.ip.u_addr.ip4.addr = (uint32_t)apIP;
+    esp_netif_dhcps_stop(ap);
+    esp_netif_set_dns_info(ap, ESP_NETIF_DNS_MAIN, &dns);
+    uint8_t offer = OFFER_DNS;
+    esp_netif_dhcps_option(ap, ESP_NETIF_OP_SET, ESP_NETIF_DOMAIN_NAME_SERVER, &offer, sizeof(offer));
+    // esp_netif keeps the POINTER we hand it rather than copying, so this buffer is static.
+    static char captiveUri[40];
+    snprintf(captiveUri, sizeof(captiveUri), "http://%s%s", apIP.toString().c_str(),
+             HA_CAPTIVE_API_PATH);
+    esp_err_t cperr = esp_netif_dhcps_option(
+        ap, ESP_NETIF_OP_SET, ESP_NETIF_CAPTIVEPORTAL_URI, captiveUri, strlen(captiveUri));
+    esp_netif_dhcps_start(ap);
+    captiveApiOk = (cperr == ESP_OK);
+}
+
 static void startPortal() {
     // A fresh session leases fresh addresses. Without this the IP -> MAC table
     // outlives the AP, and the next phone to be handed a recycled address resolves
@@ -548,6 +619,7 @@ static void startPortal() {
     WiFi.softAPConfig(apIP, apIP, IPAddress(255, 255, 255, 0));
     WiFi.softAP(apName, nullptr, 1, 0, AP_MAX_CONN); // open AP
     delay(100);
+    apAnnouncePortal(); // before any station leases, or the first joiner gets neither
 
     dnsServer.start(53, "*", apIP);
     server.begin();
@@ -556,6 +628,7 @@ static void startPortal() {
     ENGINE_LOCK();
     haHost.portalRunning = true;
     haHostLog(hu("AP up", "AP an"));
+    haHostLog(captiveApiOk ? "DHCP: DNS + Portal-URL" : "DHCP: DNS (no portal opt)");
     ENGINE_UNLOCK();
     haJingleUp();
     Serial.printf("[ha] AP \"%s\" up at %s\n", apName, WiFi.softAPIP().toString().c_str());

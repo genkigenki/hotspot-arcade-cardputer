@@ -24,7 +24,8 @@ extern uint8_t haLang;
 struct HaHostPlayer {
     bool used;
     char nick[HA_NICK_LEN];
-    int32_t score;
+    int32_t score; // this game, from the SCORE delta stream
+    int32_t total; // the evening across games, replaced absolute by TOTAL (v1.9.0)
 };
 
 struct HaHost {
@@ -103,6 +104,12 @@ static inline void haHostLeave(uint8_t pid) {
 static inline void haHostScore(uint8_t pid, int delta) {
     if(pid < 1 || pid > HA_MAX_PLAYERS || !haHost.p[pid].used) return;
     haHost.p[pid].score += delta;
+    haHostTouch();
+}
+
+static inline void haHostTotal(uint8_t pid, int32_t total) {
+    if(pid < 1 || pid > HA_MAX_PLAYERS || !haHost.p[pid].used) return;
+    haHost.p[pid].total = total;
     haHostTouch();
 }
 

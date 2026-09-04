@@ -1,3 +1,29 @@
+### v0.9.0 — upstream v1.9.0: the portal opens by itself, and the evening keeps score
+
+- **The captive portal opens on its own again.** The AP handed phones an address and a
+  gateway but no DNS server, so the OS probe (captive.apple.com, connectivitycheck)
+  could not even resolve — iOS said "no internet" and offered nothing, while typing
+  192.168.4.1 worked all along. DHCP now announces the resolver (option 6) and the
+  portal URL itself (option 114, RFC 8910), so iOS keeps a persistent "Log In" entry in
+  WiFi settings instead of a popup you can dismiss and never find again. Ported from
+  upstream v1.9.0.
+- **The evening has a score, not just the game.** Cross-game totals: you gain a point
+  for every player you finish above; 1v1 wins count one. The leaderboard shows the
+  running total in brackets beside the game score. Host reset clears both.
+- **A dozing phone keeps its seat.** A full send queue used to close the socket — to
+  the room, a random drop. The frame is discarded instead; the next push carries the
+  same truth (upstream PR #28).
+- **Kiss Marry Kill goes deep**: its own pack caps and 100-name packs in English and
+  German, so a table can play it twice without repeats (open upstream PR).
+- Upstream v1.9.0 vendored in full: updated async libraries, heap measured instead of
+  guessed, per-board fixes. Twenty games, unchanged.
+
+### Install
+
+Search for **"Hotspot Arcade"** in the **M5Burner** app or the **M5Launcher** catalog.
+Flash by hand: see the v0.8.0 notes below (read the partition table first if M5Launcher
+manages the app slot).
+
 ### v0.8.0 — upstream v1.8.0: far more memory headroom
 
 - **Much more room to breathe.** Upstream reworked how game state is held in

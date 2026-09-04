@@ -141,9 +141,7 @@ static inline int haUtf8Len(const char* s) {
 // would have charged all six sharing games, and WYR/Spectrum twice over, for depth only
 // this one needs -- 16.4 KB just to reach 48.
 #define KMK_MAX_PACKS 6 // one per shipped pack file (animals, creatures, famous, fiction, historical, mix)
-#ifndef KMK_MAX_NAMES // a host may size this down for RAM (see the Cardputer port)
 #define KMK_MAX_NAMES 104
-#endif
 
 // Secrets: each round shows a yes/no question. Everyone secretly predicts how many
 // of the N joined players will answer "yes" (0..N), then secretly answers. Only the
@@ -215,29 +213,6 @@ static inline int haUtf8Len(const char* s) {
 #define WW_WOLF 2
 #define WW_SEER 3
 #define WW_DOCTOR 4
-#define WW_HUNTER 5
-#define WW_WITCH 6
-#define WW_CUPID 7
-// Table sizes each extra role joins at. Kept apart from WW_MIN_PLAYERS because every
-// special seat is a villager seat spent: deal them too early and a five-player table is
-// all specials and no village.
-#define WW_HUNTER_MIN 7
-#define WW_WITCH_MIN 9
-#define WW_CUPID_MIN 11
-
-// The night is ONE simultaneous window in this engine (see wwNight), not a sequence of
-// role calls, so two roles are adapted rather than ported literally:
-//
-//   Hunter -- names their revenge target ahead of time ("who would you take with you")
-//   instead of being woken when they die. No pause after a death, and the choice still
-//   costs them: it is made blind, before they know who dies.
-//
-//   Witch -- her potions protect and poison a NAMED player for the night, rather than
-//   being shown the wolves' victim first. Being shown the victim needs the wolves to
-//   have finished, which a simultaneous night cannot offer.
-//
-// Both are documented in docs/PROTOCOL.md; the alternative was a stack of sub-stages,
-// each with its own timer, on a game whose night is already the longest in the app.
 // Sub-phases inside Party::phase 2 (playing).
 #define WW_S_ROLES 0
 #define WW_S_NIGHT 1
@@ -334,6 +309,9 @@ void haWsBroadcast(const String& msg); // to all connected sockets
 void haUartJoin(uint8_t pid, const char* nick);
 void haUartLeave(uint8_t pid);
 void haUartScore(uint8_t pid, int delta, const char* reason);
+// A player's cross-game tally, sent ABSOLUTE rather than as a delta so the host's copy
+// can never drift out of step with the board's (see HA_MSG_TOTAL in ha_proto.h).
+void haUartTotal(uint8_t pid, int32_t total);
 void haUartEvent(const String& json);
 void haUartRoundResult(const String& json);
 // Human-readable trace of every identity decision (see onHello): a genuinely new
@@ -364,7 +342,14 @@ struct Player {
     uint64_t deviceKey; // which phone, 0 = unknown (see onHello)
     char nick[HA_NICK_LEN];
     char avatar[8]; // emoji avatar (UTF-8), player-picked on the landing screen
+    // TWO numbers, deliberately. `score` is this game only and is wiped on every switch
+    // (selectGame -> resetScoresAll), which is what each game's own board and podium show.
+    // `total` is the evening: it survives game switches and reconnects, and only ever grows
+    // by awardContest() at a finish. Games award wildly different amounts -- a trivia
+    // session runs to ~15k, a werewolf win pays 1 -- so `score` can never be compared
+    // across games, and `total` is what a cross-game ranking is built from.
     int32_t score;
+    int32_t total;
 };
 
 // How many bot seats the testing switch may fill. Werewolf's minimum of 5 is the
@@ -373,17 +358,18 @@ struct Player {
 #define HA_BOT_MAX 4
 
 // A phone that drops out keeps its identity for the rest of the session. When the
-// socket closes the player's nick, avatar and score are parked under their device
-// key; the same phone coming back -- a WiFi blip, a locked screen, a browser
-// restart, a tab swiped away -- is handed all three back instead of arriving as a
-// stranger on zero. Ten slots is the softAP's station cap, so a full room's worth
-// of leavers fits; beyond that the stalest is evicted.
+// socket closes the player's nick, avatar, score and cross-game total are parked
+// under their device key; the same phone coming back -- a WiFi blip, a locked
+// screen, a browser restart, a tab swiped away -- is handed them all back instead
+// of arriving as a stranger on zero. Ten slots is the softAP's station cap, so a
+// full room's worth of leavers fits; beyond that the stalest is evicted.
 #define HA_PARKED_MAX 10
 struct ParkedPlayer {
     uint64_t deviceKey; // 0 = free slot
     char nick[HA_NICK_LEN];
     char avatar[8];
     int32_t score;
+    int32_t total; // the evening's tally; losing this on a blip is the whole point
     uint32_t at; // millis when parked, for evicting the stalest first
 };
 
@@ -674,22 +660,9 @@ struct WerewolfState {
     bool revealed[HA_MAX_PLAYERS + 1]; // role is public (died, or the game ended)
     int8_t kill[HA_MAX_PLAYERS + 1]; // a wolf's night target pid, -1 = not picked
     int8_t accuse[HA_MAX_PLAYERS + 1]; // a player's day vote pid, -1 = not voted
-    bool castSeer; // a seer was DEALT this game (stays true after they die)
-    bool castDoctor; // ...and a doctor. Published so narration can call every role
-                     // every night: skipping a call would announce a death.
     uint8_t seer; // the seer's pid this game, 0 = none left
     uint8_t seerTarget; // who the seer checked this night, 0 = nobody yet
     bool seerResult; // ...and whether they are a werewolf. Seer's payload only.
-    uint8_t hunter; // the hunter's pid, 0 = none dealt / dead
-    int8_t hunterMark; // who the hunter takes with them, -1 = nobody named yet
-    uint8_t witch; // the witch's pid, 0 = none dealt / dead
-    int8_t witchSave; // who her healing potion protects tonight, -1 = unused
-    int8_t witchKill; // ...and who the poison takes, -1 = unused
-    bool witchSaveGone; // each potion is once per GAME, not per night
-    bool witchKillGone;
-    uint8_t cupid; // cupid's pid, 0 = none dealt / dead
-    uint8_t loveA, loveB; // the pair cupid tied on night one, 0 = not tied yet
-    bool castHunter, castWitch, castCupid; // dealt this game (see castSeer)
     uint8_t doctor; // the doctor's pid this game, 0 = none dealt / none left
     uint8_t docTarget; // who the doctor is shielding tonight. Doctor's payload only.
     uint8_t docLast; // and last night's shield, which may not be repeated
@@ -848,10 +821,34 @@ static inline uint8_t chCornerBit(int sq) {
 }
 
 // Zobrist keys: 12*64 piece-square, one side-to-move, 16 castling-rights states, 8
-// en-passant files. Filled once from a fixed seed (chessZobristInit) so a key means
-// the same position on every boot, and in the sim.
-static uint32_t ZOB[12 * 64 + 1 + 16 + 8];
-static bool ZOB_READY = false;
+// en-passant files, from a fixed seed so a key means the same position on every boot
+// and in the sim.
+//
+// Built at COMPILE time and stored in flash. It used to be a mutable DRAM array filled
+// on first use, and the comment here defended that as avoiding "3 KB of flash on a
+// stored table" -- a fair trade when flash was the tight resource. On the S2 it is now
+// backwards: flash sits around a third full while internal DRAM is the thing that would
+// not fit at all, so the same splitmix32 loop runs in constexpr and the 3,172 bytes move
+// off DRAM entirely. No init call, no ready flag, and the keys are identical either way.
+#define ZOB_N (12 * 64 + 1 + 16 + 8)
+struct ZobTable {
+    uint32_t k[ZOB_N];
+};
+static constexpr ZobTable zobBuild() {
+    ZobTable t{};
+    uint32_t s = 0x9E3779B9UL;
+    for(unsigned i = 0; i < ZOB_N; i++) {
+        s += 0x9E3779B9UL;
+        uint32_t z = s;
+        z = (z ^ (z >> 16)) * 0x85EBCA6BUL;
+        z = (z ^ (z >> 13)) * 0xC2B2AE35UL;
+        t.k[i] = z ^ (z >> 16);
+    }
+    return t;
+}
+static constexpr ZobTable ZOB_T = zobBuild();
+// Keeps every use site reading ZOB[i] exactly as before.
+static constexpr const uint32_t* ZOB = ZOB_T.k;
 
 // The position identity per FIDE 9.2: placement, side to move, castling rights and
 // en-passant capturability. Everything repetition hashing has to cover, and nothing
@@ -940,68 +937,11 @@ public:
         strlcpy(_parked[slot].nick, _p[pid].nick, HA_NICK_LEN);
         strlcpy(_parked[slot].avatar, _p[pid].avatar, sizeof(_parked[slot].avatar));
         _parked[slot].score = _p[pid].score;
+        _parked[slot].total = _p[pid].total;
         _parked[slot].at = millis();
     }
 
     // Take a parked identity back out of the store (consumed, not copied).
-    // A seat held through a long round even though its phone is gone. Spyfall talks for
-    // six minutes, Werewolf's nights are a minute each and a Frankendraw panel is 75
-    // seconds: a phone dimming its screen in that time is normal behaviour, not a player
-    // leaving. Freeing the seat there ended the round outright -- three players, one
-    // dozing phone, and Spyfall dropped under SPYFALL_MIN_PLAYERS and aborted.
-    //
-    // So during those rounds a closing socket only clears wsId; the seat, the role and
-    // the score stay. The phone that comes back is recognised by deviceKey through the
-    // rebind that already exists in onHello, so it simply resumes. The round ends, and
-    // THEN the seats of whoever never came back are released for real.
-    //
-    // A held seat is never waited on: see wwOwesNight, fdAllDone, spyfallAllSeen and
-    // spyfallNextNominator. It still counts as present and still appears in the reveal,
-    // which is what lets a lone survivor finish the round -- and lets an uncaught spy
-    // win by nobody having accused them.
-    bool _held[HA_MAX_PLAYERS + 1] = {false};
-
-    bool playerAway(uint8_t pid) const { return _p[pid].used && !_p[pid].wsId; }
-
-    // The games whose round is long enough that a dark screen is expected. Phase 2 is
-    // "playing" for all three; outside it, a leave is a leave.
-    bool rosterHeld() const {
-        if(_active == HA_GAME_SPYFALL) return _sf.pt.phase == 2;
-        if(_active == HA_GAME_FRANKENDRAW) return _fd.pt.phase == 2;
-        // Werewolf holds for the whole round as well. A phone going dark during the
-        // argument is the normal case and the player is still sitting there, so there is
-        // no such thing as walking out mid-round here: the seat stays, alive and
-        // accusable. The consequence is deliberate -- an absent wolf never kills, and the
-        // village has to actually reach a lynch to end the game rather than being handed
-        // a default win.
-        if(_active == HA_GAME_WEREWOLF) return _ww.pt.phase == 2;
-        return false;
-    }
-
-    // Turn held seats into real departures. Called from tick() as soon as the round that
-    // held them is over, so every exit -- reveal, final, a game change, reset -- goes
-    // through one path.
-    void releaseHeldSeats() {
-        bool any = false;
-        for(uint8_t i = 1; i <= HA_MAX_PLAYERS; i++) {
-            if(!_held[i]) continue;
-            _held[i] = false;
-            if(_p[i].used && !_p[i].wsId) { // still gone: now it counts
-                anyOnLeave(i);
-                parkPlayer(i);
-                _p[i] = Player{};
-                _gvVote[i] = -1;
-                haUartLeave(i);
-                any = true;
-            }
-        }
-        if(any) {
-            triviaOnRosterChange();
-            partyRosterChanged();
-            pushAll();
-        }
-    }
-
     bool unparkPlayer(uint64_t deviceKey, uint8_t pid) {
         if(!deviceKey) return false;
         for(int i = 0; i < HA_PARKED_MAX; i++) {
@@ -1009,6 +949,7 @@ public:
             strlcpy(_p[pid].nick, _parked[i].nick, HA_NICK_LEN);
             strlcpy(_p[pid].avatar, _parked[i].avatar, sizeof(_p[pid].avatar));
             _p[pid].score = _parked[i].score;
+            _p[pid].total = _parked[i].total;
             _parked[i] = ParkedPlayer{};
             return true;
         }
@@ -1030,14 +971,6 @@ public:
         // take the live player down with it.
         uint8_t pid = pidByWs(wsId);
         if(!pid) return;
-        // Mid-round in a long game: keep the seat, drop only the socket. See _held.
-        if(rosterHeld() && !_gvActive) {
-            _p[pid].wsId = 0;
-            _held[pid] = true;
-            _gvVote[pid] = -1;
-            pushAll(); // the room sees them go quiet, the round carries on
-            return;
-        }
         anyOnLeave(pid); // forfeit any active match
         bool wasProposer = (_gvActive && pid == _gvProposer);
         parkPlayer(pid);  // keep nick/avatar/score for this phone's return
@@ -1076,7 +1009,6 @@ public:
             pid = pidByDevice(deviceKey);
             if(pid) {
                 _p[pid].wsId = wsId;
-                _held[pid] = false; // back inside the round it was held for
                 rebound = true;
                 haLogJoin(pid, deviceKey, _p[pid].nick, true);
             }
@@ -1088,9 +1020,10 @@ public:
             _p[pid].wsId = wsId;
             _p[pid].deviceKey = deviceKey;
             _p[pid].score = 0;
+            _p[pid].total = 0;
             // This phone played earlier and dropped out: hand back its own name,
-            // avatar and score instead of starting it over at zero. A name the
-            // player has just typed still wins over the restored one.
+            // avatar, score and cross-game total instead of starting it over at
+            // zero. A name the player has just typed still wins over the restored one.
             bool restored = unparkPlayer(deviceKey, pid);
             if(!restored || (named && nick && nick[0])) {
                 strlcpy(_p[pid].nick, (nick && nick[0]) ? nick : "PLAYER", HA_NICK_LEN);
@@ -1099,6 +1032,14 @@ public:
             if(!restored || (named && avatar && avatar[0]))
                 strlcpy(_p[pid].avatar, (avatar && avatar[0]) ? avatar : "\xF0\x9F\x99\x82", sizeof(_p[pid].avatar));
             haUartJoin(pid, _p[pid].nick);
+            // A restored player arrives on a NEW pid, so the host has just created a fresh
+            // roster row sitting on zero while we hold their real numbers. Hand both back,
+            // or the board shows a returning player as a stranger. The score goes as a delta
+            // because that is all SCORE can carry; the total goes absolute and cannot drift.
+            if(restored) {
+                if(_p[pid].score) haUartScore(pid, _p[pid].score, "restore");
+                haUartTotal(pid, _p[pid].total);
+            }
             haLogJoin(pid, deviceKey, _p[pid].nick, restored);
         } else if(!rebound || named) {
             // Re-hello from a known socket = the player changed their name/avatar in
@@ -1155,26 +1096,52 @@ public:
         pushAll();
     }
 
+    // The host asking for a reset means "start the evening over", so the cross-game tally
+    // goes with the current game's scores. A reset that left the totals standing would be
+    // the one control that cannot actually clear the board everyone is looking at.
     void resetScores() {
-        for(uint8_t i = 1; i <= HA_MAX_PLAYERS; i++)
-            if(_p[i].used) _p[i].score = 0;
+        resetScoresAll();
+        resetTotalsAll();
+        pushTotals();
         pushAll();
     }
 
     // ---- trivia content streamed from the Flipper (packs -> votable topics) ----
+    // Allocated on demand rather than living in static DRAM, the same trade Frankendraw's
+    // stroke store makes: ps_malloc prefers PSRAM (the S2) and falls back to internal heap.
+    //
+    // Placement-new, not memset: these are Strings, and zeroing them would leave every one
+    // holding a garbage pointer. Allocated lazily rather than in the constructor because a
+    // static Engine is constructed before the core has brought PSRAM up.
+    //
+    // Returns false only when neither pool has the room. Every caller that adds content
+    // gates on it, so a board that cannot afford the topics simply never has any and trivia
+    // declines to start, while every other game keeps working.
+    bool topicsEnsure() {
+        if(_topics) return true;
+        size_t bytes = sizeof(TriviaTopic) * TRIVIA_MAX_TOPICS;
+        void* mem = ps_malloc(bytes);
+        if(!mem) mem = malloc(bytes);
+        if(!mem) return false;
+        _topics = (TriviaTopic*)mem;
+        for(int i = 0; i < TRIVIA_MAX_TOPICS; i++) new(&_topics[i]) TriviaTopic();
+        return true;
+    }
     void triviaTopicsClear() {
-        for(int i = 0; i < TRIVIA_MAX_TOPICS; i++) _topics[i] = TriviaTopic{};
+        if(_topics)
+            for(int i = 0; i < TRIVIA_MAX_TOPICS; i++) _topics[i] = TriviaTopic{};
         _topicCount = 0;
     }
     void triviaAddTopic(const char* name) {
         if(_topicCount >= TRIVIA_MAX_TOPICS) return;
+        if(!topicsEnsure()) return;
         _topics[_topicCount] = TriviaTopic{};
         _topics[_topicCount].name = name;
         _topics[_topicCount].qcount = 0;
         _topicCount++;
     }
     void triviaAddQ(const char* json) {
-        if(_topicCount == 0) return;
+        if(_topicCount == 0 || !_topics) return;
         TriviaTopic& tp = _topics[_topicCount - 1];
         if(tp.qcount >= TRIVIA_MAX_QS) return;
         TriviaQ& q = tp.qs[tp.qcount];
@@ -1488,10 +1455,6 @@ public:
             gameVoteResolve(now);
             return;
         }
-        // Seats held through a long round (see _held) become real departures the moment
-        // that round is over -- whichever way it ended. Before botSync, so the bot count
-        // is computed against the roster that is actually left.
-        if(!rosterHeld()) releaseHeldSeats();
         botSync(now); // keep the bot seats (testing switch) matched, and let them act
         if(_active == HA_GAME_TRIVIA)
             triviaTick(now);
@@ -1651,16 +1614,6 @@ public:
             wwSee(pid, v); // seer's night check
         } else if(strcmp(type, "guard") == 0 && ha_json_int(json, "n", &v)) {
             wwGuard(pid, v); // doctor's night shield
-        } else if(strcmp(type, "hunt") == 0 && ha_json_int(json, "n", &v)) {
-            wwHunt(pid, v);
-        } else if(strcmp(type, "potion") == 0 && ha_json_int(json, "n", &v)) {
-            const char* sp = ha_json_find(json, "save");
-            wwPotion(pid, v, sp && strncmp(sp, "true", 4) == 0);
-        } else if(strcmp(type, "pair") == 0) {
-            int a = 0, b = 0;
-            if(ha_json_int(json, "a", &a) && ha_json_int(json, "b", &b)) wwPair(pid, a, b);
-        } else if(strcmp(type, "narrator") == 0) {
-            wwSetNarrator(pid);
         } else if(strcmp(type, "accuse") == 0 && ha_json_int(json, "n", &v)) {
             wwAccuse(pid, v); // day vote
         } else if(strcmp(type, "seen") == 0) {
@@ -1743,9 +1696,7 @@ public:
         } else if(strcmp(type, "done") == 0) {
             fdDone(pid);
         } else if(strcmp(type, "undo") == 0) {
-            int un = 1; // a pen stroke is many segments; the client says how many
-            if(!ha_json_int(json, "n", &un) || un < 1) un = 1;
-            fdUndo(pid, un);
+            fdUndo(pid);
         } else if(strcmp(type, "thumb") == 0) {
             int sheet, val;
             if(ha_json_int(json, "sheet", &sheet) && ha_json_int(json, "v", &val))
@@ -1764,13 +1715,13 @@ private:
     uint8_t _active = HA_GAME_NONE;
     char _lang[8] = {0}; // UI language code for the phone client, "" = English
     // ---- always-resident state (kept OUT of the per-game union below) ----
-    TriviaTopic _topics[TRIVIA_MAX_TOPICS] = {}; // trivia's content (its runtime state _t is in the union)
+    // Trivia's content, and the single biggest block of Engine state: TRIVIA_MAX_TOPICS
+    // topics of TRIVIA_MAX_QS questions, five Strings each, well over 10 KB. Held off
+    // internal DRAM (see topicsEnsure) because on the S2 it is the difference between
+    // fitting and not. Its runtime state _t is in the union; this is the content.
+    TriviaTopic* _topics = nullptr;
     uint8_t _topicCount = 0;
     uint8_t _packGame = 0; // HA_GAME_* of the pack currently being streamed, 0 = none
-    // Which phone reads the night out loud. Kept out of WerewolfState so the choice
-    // survives selectGame -- a table should not have to nominate a narrator again for
-    // every round. 0 = nobody has volunteered; the client then narrates on no phone.
-    uint8_t _wwNarrator = 0;
     // The eight content games' packs, lifted out of their state structs. They hold Strings (so
     // they cannot live in the POD union) and are streamed for every game up front regardless of
     // which one is active, so they must stay resident. Each game's runtime state is in the union.
@@ -2088,6 +2039,10 @@ private:
             s += ha_json_escape(_p[pid].avatar);
             s += "\",\"score\":";
             s += _p[pid].score;
+            // The evening's tally. This roster goes out on EVERY push, whatever screen a
+            // phone is on, so it is the one place the client can always read totals from.
+            s += ",\"total\":";
+            s += _p[pid].total;
             // In a 1v1 match (playing OR still on the over screen): don't let others
             // challenge them until they return to the lobby.
             s += ",\"busy\":";
@@ -2331,6 +2286,7 @@ private:
         _t.qi++;
         if(_t.qi >= _topics[_t.topic].qcount) {
             _t.phase = 4; // final
+            awardContest(); // played to the end: the standings pay out across games
             haUartRoundResult("{\"trivia\":\"final\"}");
             pushAll();
         } else {
@@ -2387,6 +2343,8 @@ private:
             s += ha_json_escape(_p[order[i]].avatar);
             s += "\",\"score\":";
             s += _p[order[i]].score;
+            s += ",\"total\":";
+            s += _p[order[i]].total;
             s += "}";
         }
         s += "]";
@@ -2823,6 +2781,11 @@ private:
         uint8_t loser = (winnerPid == m->a) ? m->b : (winnerPid == m->b) ? m->a : 0;
         if(winnerPid) {
             _p[winnerPid].score += 300;
+            // A 1v1 win is one opponent beaten. Deliberately NOT awardContest(): _p[].score
+            // is global and several matches run at once, so a room-wide rank here would
+            // credit players sitting at other boards. A draw pays nobody.
+            _p[winnerPid].total += 1;
+            pushTotals();
             haUartScore(winnerPid, 300, "duelwin");
             haUartRoundResult(String("{\"win\":") + winnerPid + ",\"lose\":" + loser + "}");
         } else {
@@ -3065,6 +3028,7 @@ private:
         }
         if(_d.round >= _d.roundsTotal) { // played them all -> final scoreboard
             _d.phase = 3;
+            awardContest(); // played to the end: the standings pay out across games
             haUartRoundResult("{\"draw\":\"final\"}");
             pushAll();
             return;
@@ -3085,6 +3049,8 @@ private:
             return;
         }
         WordPack& dp = _dPacks[_d.pack];
+        // No awardContest() here or at any other bail-out: nothing was played, so nobody
+        // beat anybody. Handing out points for a pack that failed to load would be a lie.
         if(dp.count == 0) { // empty pack: nothing to draw, end the game
             _d.phase = 3;
             haUartRoundResult("{\"draw\":\"final\"}");
@@ -3287,6 +3253,8 @@ private:
         m->winner = winner;
         uint8_t loser = (winner == m->a) ? m->b : m->a;
         _p[winner].score += 300;
+        _p[winner].total += 1; // one opponent beaten (see duelFinish)
+        pushTotals();
         haUartScore(winner, 300, "pongwin");
         haUartRoundResult(String("{\"win\":") + winner + ",\"lose\":" + loser + "}");
     }
@@ -3460,6 +3428,50 @@ private:
             if(_p[i].used) _p[i].score = 0;
     }
 
+    // Tell the host every current total. At most HA_MAX_PLAYERS tiny frames, and only when
+    // something actually moved (a finish, a duel win, a join, a reset), so the Flipper holds
+    // a COPY rather than a running sum it has to keep in step by itself. That is the whole
+    // reason this is a separate frame from SCORE: SCORE is a delta stream, and a delta
+    // stream is what lets the two boards drift apart.
+    void pushTotals() {
+        for(uint8_t i = 1; i <= HA_MAX_PLAYERS; i++)
+            if(_p[i].used && !_p[i].bot) haUartTotal(i, _p[i].total);
+    }
+
+    // Host asked for a clean slate: the evening's tally goes too, not just this game.
+    void resetTotalsAll() {
+        for(uint8_t i = 1; i <= HA_MAX_PLAYERS; i++)
+            if(_p[i].used) _p[i].total = 0;
+    }
+
+    // Convert a finished contest's standings into cross-game points: you gain one for
+    // every player you finished ABOVE.
+    //
+    // This is the whole answer to "a trivia session pays 15k and a werewolf win pays 1".
+    // Each game keeps its own scoring, gradients and all -- trivia's speed bonus, spectrum's
+    // proximity, kmk's hit count are the mechanics and flattening them would wreck them --
+    // and only the RANKING is carried across. So a game contributes by how many people you
+    // beat at it, which is comparable everywhere and needs no per-game tuning table.
+    //
+    // Counting strictly-lower scores gives ties the lower value for free: two players tied
+    // at the top of six each beat four, not five. A 1v1 is not run through here (see the
+    // duel/pong/battle/chess finishers) because _p[].score is global and several matches
+    // run at once, so a global rank would credit players from unrelated boards.
+    //
+    // Bots are neither counted nor credited. They only ever appear when the host flips the
+    // testing switch to pad a room to quorum, and points for beating a robot would be points
+    // for nothing.
+    void awardContest() {
+        for(uint8_t i = 1; i <= HA_MAX_PLAYERS; i++) {
+            if(!_p[i].used || _p[i].bot) continue;
+            int beaten = 0;
+            for(uint8_t j = 1; j <= HA_MAX_PLAYERS; j++)
+                if(_p[j].used && !_p[j].bot && _p[j].score < _p[i].score) beaten++;
+            _p[i].total += beaten;
+        }
+        pushTotals();
+    }
+
     // A join/leave can complete a vote/round or cancel a pending start.
     void partyRosterChanged() {
         if(_active == HA_GAME_WYR)
@@ -3578,6 +3590,9 @@ private:
         Party& pt = _wyr.pt;
         if(pt.round >= WYR_ROUNDS) {
             pt.phase = 4; // final
+            // A no-op today -- WYR is a poll and nobody scores, so everyone ties on 0 and
+            // beats nobody. Called anyway so it pays out by itself the day WYR does score.
+            awardContest();
             pushAll();
             return;
         }
@@ -3821,6 +3836,7 @@ private:
         Party& pt = _scr.pt;
         if(pt.round >= SCR_ROUNDS) {
             pt.phase = 4;
+            awardContest(); // played to the end: the standings pay out across games
             haUartRoundResult("{\"scramble\":\"final\"}");
             pushAll();
             return;
@@ -3986,6 +4002,7 @@ private:
         Party& pt = _react.pt;
         if(pt.round >= REACT_ROUNDS) {
             pt.phase = 4;
+            awardContest(); // played to the end: the standings pay out across games
             haUartRoundResult("{\"react\":\"final\"}");
             pushAll();
             return;
@@ -4145,6 +4162,7 @@ private:
         Party& pt = _gc.pt;
         if(pt.round >= GC_ROUNDS) {
             pt.phase = 4;
+            awardContest(); // played to the end: the standings pay out across games
             haUartRoundResult("{\"gc\":\"final\"}");
             pushAll();
             return;
@@ -4317,9 +4335,28 @@ private:
         m->winner = 0;
     }
 
+    // Scoring now copies duelFinish, which battleship's finish had simply never done (see
+    // the note on chessFinish, which spotted the omission and worked around it). A win here
+    // used to move nothing at all: no score, no cross-game total, and not a single UART
+    // frame, so the host's board and console never heard that a match had been won.
+    //
+    // The re-entry guard is new too. The other three finishers all open with one; this one
+    // leaned on its callers, which was harmless while it mutated nothing and is not now that
+    // it moves a cumulative total. It still admits the phase-0 forfeit, where someone walks
+    // out during ship placement, but that match never started so it pays nobody.
     void battleFinish(BattleMatch* m, uint8_t winner) {
+        if(m->phase == 2) return; // already finished
+        bool played = (m->phase == 1); // phase 0 = still placing ships, nothing contested yet
         m->phase = 2;
         m->winner = winner;
+        if(played && winner) {
+            uint8_t loser = (winner == m->a) ? m->b : m->a;
+            _p[winner].score += 300;
+            _p[winner].total += 1; // one opponent beaten (see duelFinish)
+            pushTotals();
+            haUartScore(winner, 300, "bswin");
+            haUartRoundResult(String("{\"win\":") + winner + ",\"lose\":" + loser + "}");
+        }
     }
 
     // Parse one base-10 int from `p`, advancing past it. Own parser (no strtol, which
@@ -4773,21 +4810,6 @@ private:
         return knights == 0; // bishops only, and the loop proved they share a color
     }
 
-    // splitmix32 over a fixed seed: the Zobrist keys are the same on every boot without
-    // spending 3 KB of flash on a stored table.
-    static void chessZobristInit() {
-        if(ZOB_READY) return;
-        uint32_t s = 0x9E3779B9UL;
-        for(unsigned i = 0; i < sizeof(ZOB) / sizeof(ZOB[0]); i++) {
-            s += 0x9E3779B9UL;
-            uint32_t z = s;
-            z = (z ^ (z >> 16)) * 0x85EBCA6BUL;
-            z = (z ^ (z >> 13)) * 0xC2B2AE35UL;
-            ZOB[i] = z ^ (z >> 16);
-        }
-        ZOB_READY = true;
-    }
-
     // Can the side to move actually capture en passant here? FIDE 9.2 compares the
     // *possible moves*, not the bare ep square, so a hash that always folds in the ep
     // file reports two identical positions as different and repetition never triggers.
@@ -4815,7 +4837,6 @@ private:
     // Position key for repetition detection, recomputed from scratch (a 64-square scan
     // once per move; incremental updating would buy nothing at this rate).
     static uint32_t chessHash(const ChessCore& c) {
-        chessZobristInit();
         uint32_t h = 0;
         for(int i = 0; i < 64; i++)
             if(c.sq[i]) h ^= ZOB[(c.sq[i] - 1) * 64 + i];
@@ -4928,7 +4949,6 @@ private:
         m->lastStamp = millis();
         m->lastMove = -1;
         m->offerBy = 0;
-        chessZobristInit();
         m->hist[0] = chessHash(m->core);
         m->histLen = 1;
     }
@@ -4943,6 +4963,8 @@ private:
         uint8_t loser = (winnerPid == m->a) ? m->b : (winnerPid == m->b) ? m->a : 0;
         if(winnerPid) {
             _p[winnerPid].score += 300;
+            _p[winnerPid].total += 1; // one opponent beaten (see duelFinish)
+            pushTotals();
             haUartScore(winnerPid, 300, "chesswin");
             haUartRoundResult(String("{\"win\":") + winnerPid + ",\"lose\":" + loser + "}");
         } else {
@@ -5330,6 +5352,12 @@ private:
         WyrPack& pk = _specPacks[_spec.pack];
         if(pt.round >= SPECTRUM_ROUNDS || pk.count == 0) {
             pt.phase = 4; // final
+            // This one `if` is BOTH the real finish and the empty-pack bail, so the award
+            // has to tell them apart. pt.round only ever advances past 0 once a round has
+            // actually been played, and an unplayable pack ends here on the first call --
+            // so round > 0 means "we played", and it is the same test at kmk, secrets and
+            // fillblank below.
+            if(pt.round > 0) awardContest();
             pushAll();
             return;
         }
@@ -5430,6 +5458,11 @@ private:
         if(pt.phase == 1) {
             if(partyCountdownDone(pt, now)) {
                 pt.round = 0;
+                // Start every session from zero. Only selectGame() used to do this, so a
+                // second game of spectrum/kmk/secrets/fillblank/werewolf/spyfall ranked on
+                // scores carried over from the first -- invisible while nothing read the
+                // ranking, and wrong now that awardContest() pays out from it.
+                resetScoresAll();
                 _spec.pack = (uint8_t)spectrumWinningPack();
                 _spec.psychicSeq = (decltype(_spec.psychicSeq))esp_random();
                 _spec.cardSeq = (decltype(_spec.cardSeq))esp_random();
@@ -5616,6 +5649,7 @@ private:
         KmkPack& pk = _kmkPacks[_kmk.pack];
         if(pt.round >= KMK_ROUNDS || pk.count < 3) {
             pt.phase = 4; // final (need at least three names to play)
+            if(pt.round > 0) awardContest(); // real finish, not the too-small-pack bail
             pushAll();
             return;
         }
@@ -5722,6 +5756,7 @@ private:
         if(pt.phase == 1) {
             if(partyCountdownDone(pt, now)) {
                 pt.round = 0;
+                resetScoresAll(); // fresh session (see spectrumTick)
                 _kmk.pack = (uint8_t)kmkWinningPack();
                 _kmk.chooserSeq = (decltype(_kmk.chooserSeq))esp_random();
                 _kmk.nameSeq = (decltype(_kmk.nameSeq))esp_random();
@@ -5909,6 +5944,7 @@ private:
         WordPack& pk = _secretsPacks[_secrets.pack];
         if(pt.round >= SECRETS_ROUNDS || pk.count == 0) {
             pt.phase = 4; // final
+            if(pt.round > 0) awardContest(); // real finish, not the empty-pack bail
             pushAll();
             return;
         }
@@ -5990,6 +6026,7 @@ private:
         if(pt.phase == 1) {
             if(partyCountdownDone(pt, now)) {
                 pt.round = 0;
+                resetScoresAll(); // fresh session (see spectrumTick)
                 _secrets.pack = (uint8_t)secretsWinningPack();
                 _secrets.qSeq = (decltype(_secrets.qSeq))esp_random();
                 secretsNextRound(now);
@@ -6376,6 +6413,7 @@ private:
         FillBlankPack& pk = _fbPacks[_fb.pack];
         if(pt.round >= FB_ROUNDS || pk.pcount == 0 || pk.acount == 0) {
             pt.phase = 4; // final (an empty pack can't be played)
+            if(pt.round > 0) awardContest(); // real finish, not the empty-pack bail
             pushAll();
             return;
         }
@@ -6559,6 +6597,7 @@ private:
         if(pt.phase == 1) {
             if(partyCountdownDone(pt, now)) {
                 pt.round = 0;
+                resetScoresAll(); // fresh session (see spectrumTick)
                 _fb.pack = (uint8_t)fillblankWinningPack();
                 _fb.czarSeq = (decltype(_fb.czarSeq))esp_random();
                 _fb.promptSeq = (decltype(_fb.promptSeq))esp_random();
@@ -6683,25 +6722,16 @@ private:
             // empty author -- the two must not be confusable.
             s += ",\"authors\":[";
             int deckIdx = -1;
-            String deckList;
             for(int i = 0; i < (int)_fb.subCount; i++) {
                 if(i) s += ",";
                 uint8_t a = _fb.subPid[i];
-                if(a == FB_DECK_PID) {
-                    deckIdx = i; // kept for older clients
-                    if(deckList.length()) deckList += ",";
-                    deckList += i;
-                }
+                if(a == FB_DECK_PID) deckIdx = i;
                 s += "\"";
                 if(a != FB_DECK_PID && _p[a].used) s += ha_json_escape(_p[a].nick);
                 s += "\"";
             }
             s += "]";
-            // deckcard names ONE card, but a pile can hold several deck cards: FB_MIN_PILE
-        // pads a two-player round from the deck, so the round the Czar judges has the
-        // deck's own card AND the padding. Only the last was flagged, and the client
-        // showed the rest as "a player who is gone". deckcards lists all of them.
-        s += ",\"deckcard\":" + String(deckIdx) + ",\"deckcards\":[" + deckList + "]";
+            s += ",\"deckcard\":" + String(deckIdx);
             s += ",\"pick\":" + String((int)_fb.picked);
             s += ",\"winner\":\"" +
                  ha_json_escape(_fb.winner && _p[_fb.winner].used ? _p[_fb.winner].nick : "") +
@@ -6849,11 +6879,7 @@ private:
             ord[j] = t;
         }
         bool doc = (n >= WW_DOCTOR_MIN);
-        bool hun = (n >= WW_HUNTER_MIN);
-        bool wit = (n >= WW_WITCH_MIN);
-        bool cup = (n >= WW_CUPID_MIN);
-        // the seer always, then one more special per step up in table size
-        int specials = 1 + (doc ? 1 : 0) + (hun ? 1 : 0) + (wit ? 1 : 0) + (cup ? 1 : 0);
+        int specials = doc ? 2 : 1; // the seer, and the doctor once the table is big
         int cap = (n - 1) / 2;
         if(cap > n - specials - 1) cap = n - specials - 1;
         int wolves = n / 4;
@@ -6861,12 +6887,6 @@ private:
         if(wolves > cap) wolves = cap;
         _ww.seer = 0;
         _ww.doctor = 0;
-        _ww.castSeer = true; // every table size deals a seer
-        _ww.castDoctor = doc;
-        _ww.hunter = 0; _ww.hunterMark = -1; _ww.castHunter = hun;
-        _ww.witch = 0; _ww.witchSave = -1; _ww.witchKill = -1;
-        _ww.witchSaveGone = false; _ww.witchKillGone = false; _ww.castWitch = wit;
-        _ww.cupid = 0; _ww.loveA = 0; _ww.loveB = 0; _ww.castCupid = cup;
         _ww.dealt = (uint8_t)n;
         for(int i = 0; i < n; i++) {
             uint8_t pid = ord[i];
@@ -6880,15 +6900,6 @@ private:
             } else if(doc && i == wolves + 1) {
                 _ww.role[pid] = WW_DOCTOR;
                 _ww.doctor = pid;
-            } else if(hun && i == wolves + 1 + (doc ? 1 : 0)) {
-                _ww.role[pid] = WW_HUNTER;
-                _ww.hunter = pid;
-            } else if(wit && i == wolves + 1 + (doc ? 1 : 0) + (hun ? 1 : 0)) {
-                _ww.role[pid] = WW_WITCH;
-                _ww.witch = pid;
-            } else if(cup && i == wolves + 1 + (doc ? 1 : 0) + (hun ? 1 : 0) + (wit ? 1 : 0)) {
-                _ww.role[pid] = WW_CUPID;
-                _ww.cupid = pid;
             } else {
                 _ww.role[pid] = WW_VILLAGER;
             }
@@ -6900,17 +6911,9 @@ private:
     // tell the room how many special roles are still alive.
     bool wwOwesNight(uint8_t pid) {
         if(!_ww.alive[pid]) return false;
-        if(playerAway(pid)) return false; // dozing seat: the night must not wait on it
         if(_ww.role[pid] == WW_WOLF) return !wwQuietNight() && _ww.kill[pid] < 0;
         if(_ww.role[pid] == WW_SEER) return _ww.seerTarget == 0;
         if(_ww.role[pid] == WW_DOCTOR) return _ww.docTarget == 0;
-        // The hunter only owes an answer until they have named someone; after that the
-        // mark stands for the rest of the game and they sleep like a villager.
-        if(_ww.role[pid] == WW_HUNTER) return _ww.hunterMark < 0;
-        // Cupid acts once, on night one.
-        if(_ww.role[pid] == WW_CUPID) return _ww.pt.round <= 1 && !_ww.loveA;
-        // The witch may always pass -- her potions are once per game, so "nothing
-        // tonight" is a real move and must not hold the night open.
         return false;
     }
 
@@ -6998,43 +7001,28 @@ private:
         }
     }
 
-    // The lovers win as a pair if they are the last two standing -- ahead of both the
-    // village and the wolves, and regardless of what either of them was dealt. Cupid's
-    // whole point: a wolf and a villager tied together are playing their own game.
-    bool wwLoversWin() {
-        if(!_ww.loveA || !_ww.loveB) return false;
-        if(!_ww.alive[_ww.loveA] || !_ww.alive[_ww.loveB]) return false;
-        return wwAliveInGame() == 2;
-    }
-
     // Villagers win when the last werewolf is out; werewolves win as soon as they
     // are no longer outnumbered (from there they can force any lynch they like).
     // Every player still alive on the winning side scores 1 -- surviving is the
     // whole job -- so the shared leaderboard keeps its meaning across games.
     bool wwCheckEnd(uint32_t now) {
         int w = wwAliveWolves(), v = wwAliveVillage();
-        bool lovers = wwLoversWin();
-        if(!lovers && w > 0 && w < v) return false;
-        _ww.winner = lovers ? WW_CUPID : ((w == 0) ? WW_VILLAGER : WW_WOLF);
+        if(w > 0 && w < v) return false;
+        _ww.winner = (w == 0) ? WW_VILLAGER : WW_WOLF;
         for(uint8_t i = 1; i <= HA_MAX_PLAYERS; i++) {
             if(!_p[i].used || _ww.role[i] == 0) continue;
             _ww.revealed[i] = true; // the reckoning: every role is public now
             if(!_ww.alive[i]) continue;
-            // Lovers taking it means exactly the two of them score, whatever they were
-            // dealt -- a wolf who fell in love wins with their villager, not their pack.
-            if(lovers) {
-                if(i != _ww.loveA && i != _ww.loveB) continue;
-            } else if((_ww.role[i] == WW_WOLF) != (_ww.winner == WW_WOLF)) {
-                continue;
-            }
+            if((_ww.role[i] == WW_WOLF) != (_ww.winner == WW_WOLF)) continue;
             _p[i].score += 1;
             haUartScore(i, 1, "werewolf");
         }
         haUartRoundResult(
-            String("{\"werewolf\":\"") +
-            (_ww.winner == WW_CUPID ? "lovers" : _ww.winner == WW_WOLF ? "wolves" : "villagers") +
+            String("{\"werewolf\":\"") + (_ww.winner == WW_WOLF ? "wolves" : "villagers") +
             " win\"}");
         _ww.pt.phase = 4;
+        // The village's survivors were scored six lines up, so the standings are final here.
+        awardContest();
         _ww.pt.deadline = now;
         pushAll();
         return true;
@@ -7061,26 +7049,6 @@ private:
         pushAll();
     }
 
-    // Every death goes through here, because two rules chain off one: the lovers die
-    // together, and the hunter fires on the way down. `depth` stops a pair of lovers who
-    // are also hunters from recursing forever.
-    void wwSlay(uint8_t pid, int depth = 0) {
-        if(!pid || !_p[pid].used || !_ww.alive[pid] || depth > 4) return;
-        _ww.alive[pid] = false;
-        _ww.revealed[pid] = true; // a body's role is public
-        // The hunter's parting shot, named earlier in the night (see WW_HUNTER above).
-        if(_ww.role[pid] == WW_HUNTER && _ww.hunterMark > 0) {
-            int mark = _ww.hunterMark;
-            _ww.hunterMark = -1; // fires once
-            wwSlay((uint8_t)mark, depth + 1);
-        }
-        // Lovers: neither outlives the other.
-        if(_ww.loveA && _ww.loveB) {
-            if(pid == _ww.loveA) wwSlay(_ww.loveB, depth + 1);
-            else if(pid == _ww.loveB) wwSlay(_ww.loveA, depth + 1);
-        }
-    }
-
     void wwResolveNight(uint32_t now) {
         uint8_t v = wwQuietNight() ? 0 : wwNightVictim();
         if(wwQuietNight()) {
@@ -7090,26 +7058,14 @@ private:
         } else if(_ww.docTarget && _ww.docTarget == v) {
             _ww.dawnKind = WW_D_SAVED; // the doctor was standing in the doorway
             v = 0;
-        } else if(_ww.witchSave > 0 && (uint8_t)_ww.witchSave == v) {
-            _ww.dawnKind = WW_D_SAVED; // the healing potion, spent on the right player
-            v = 0;
         } else {
             _ww.dawnKind = WW_D_KILLED;
         }
         _ww.victim = v;
-        if(v) wwSlay(v);
-        // The poison kills whether or not the wolves managed anything. Resolved after the
-        // wolves so a poisoned player cannot also be "saved" by a potion aimed elsewhere.
-        if(_ww.witchKill > 0) {
-            wwSlay((uint8_t)_ww.witchKill);
-            if(!_ww.victim) _ww.victim = (uint8_t)_ww.witchKill; // dawn has something to report
-            if(_ww.dawnKind == WW_D_QUIET || _ww.dawnKind == WW_D_NOKILL)
-                _ww.dawnKind = WW_D_KILLED;
+        if(v) {
+            _ww.alive[v] = false;
+            _ww.revealed[v] = true; // a body's role is public
         }
-        if(_ww.witchSave > 0) _ww.witchSaveGone = true; // spent, right target or not
-        if(_ww.witchKill > 0) _ww.witchKillGone = true;
-        _ww.witchSave = -1;
-        _ww.witchKill = -1;
         _ww.docLast = _ww.docTarget; // no shielding the same player twice running
         wwLog(v, _ww.dawnKind, 0, false);
         _ww.stage = WW_S_DAWN;
@@ -7133,7 +7089,8 @@ private:
     void wwResolveDay(uint32_t now) {
         _ww.lynched = wwDayOutcast();
         if(_ww.lynched) {
-            wwSlay(_ww.lynched); // the hunter fires, and a lover follows
+            _ww.alive[_ww.lynched] = false;
+            _ww.revealed[_ww.lynched] = true;
         }
         wwLog(0, 0, _ww.lynched, true);
         _ww.stage = WW_S_DUSK;
@@ -7173,45 +7130,6 @@ private:
 
     // The doctor's shield. Self-protection is allowed (the usual default), but the
     // same player may not be shielded two nights running -- including themselves.
-    // The hunter names their revenge target. Blind, before they know who dies: the
-    // choice costs something precisely because it is made early.
-    void wwHunt(uint8_t pid, int target) {
-        if(_active != HA_GAME_WEREWOLF || _ww.pt.phase != 2 || _ww.stage != WW_S_NIGHT) return;
-        if(_ww.role[pid] != WW_HUNTER || !_ww.alive[pid]) return;
-        if(_ww.hunterMark > 0) return; // named once, and it stands
-        if(target < 1 || target > HA_MAX_PLAYERS || !_p[target].used || target == pid) return;
-        if(!_ww.alive[target] || _ww.role[target] == 0) return;
-        _ww.hunterMark = (int8_t)target;
-        pushAll();
-    }
-
-    // A potion. save = true is the healing one, false the poison; each is once per game.
-    void wwPotion(uint8_t pid, int target, bool save) {
-        if(_active != HA_GAME_WEREWOLF || _ww.pt.phase != 2 || _ww.stage != WW_S_NIGHT) return;
-        if(_ww.role[pid] != WW_WITCH || !_ww.alive[pid]) return;
-        if(save ? _ww.witchSaveGone : _ww.witchKillGone) return;
-        if(save ? (_ww.witchSave > 0) : (_ww.witchKill > 0)) return; // one use per night
-        if(target < 1 || target > HA_MAX_PLAYERS || !_p[target].used) return;
-        if(!_ww.alive[target] || _ww.role[target] == 0) return;
-        if(save) _ww.witchSave = (int8_t)target;
-        else _ww.witchKill = (int8_t)target;
-        pushAll();
-    }
-
-    // Cupid ties two players on night one. They are told they are in love, and nothing
-    // else -- being a lover is not a role, and neither learns the other's.
-    void wwPair(uint8_t pid, int a, int b) {
-        if(_active != HA_GAME_WEREWOLF || _ww.pt.phase != 2 || _ww.stage != WW_S_NIGHT) return;
-        if(_ww.role[pid] != WW_CUPID || !_ww.alive[pid]) return;
-        if(_ww.loveA || _ww.pt.round > 1) return; // once, on the first night
-        if(a == b) return;
-        if(a < 1 || a > HA_MAX_PLAYERS || !_p[a].used || !_ww.alive[a] || _ww.role[a] == 0) return;
-        if(b < 1 || b > HA_MAX_PLAYERS || !_p[b].used || !_ww.alive[b] || _ww.role[b] == 0) return;
-        _ww.loveA = (uint8_t)a;
-        _ww.loveB = (uint8_t)b;
-        pushAll();
-    }
-
     void wwGuard(uint8_t pid, int target) {
         if(_active != HA_GAME_WEREWOLF || _ww.pt.phase != 2 || _ww.stage != WW_S_NIGHT) return;
         if(_ww.role[pid] != WW_DOCTOR || !_ww.alive[pid]) return;
@@ -7220,14 +7138,6 @@ private:
         if(!_ww.alive[target] || _ww.role[target] == 0) return;
         if((uint8_t)target == _ww.docLast) return; // not the same player twice running
         _ww.docTarget = (uint8_t)target;
-        pushAll();
-    }
-
-    // Any player may take the narration over, at any time -- the table sorts out who
-    // holds the phone, and a narrator whose battery died must not strand the room.
-    void wwSetNarrator(uint8_t pid) {
-        if(!_p[pid].used) return;
-        _wwNarrator = (_wwNarrator == pid) ? 0 : pid; // pressing it again hands it back
         pushAll();
     }
 
@@ -7280,6 +7190,7 @@ private:
         if(pt.phase == 1) {
             if(partyCountdownDone(pt, now)) {
                 pt.round = 0;
+                resetScoresAll(); // fresh session (see spectrumTick)
                 wwDeal();
                 pt.phase = 2;
                 _ww.stage = WW_S_ROLES;
@@ -7389,15 +7300,13 @@ private:
         if(pt.phase == 0)
             return String("{\"t\":\"werewolf\",\"phase\":\"lobby\",\"you\":") + pid +
                    ",\"players\":" + partyPlayersJson(pt) + ",\"min\":" + WW_MIN_PLAYERS +
-                   ",\"narrator\":" + _wwNarrator +
                    ",\"enough\":" + (enoughPlayers(WW_MIN_PLAYERS) ? "true" : "false") + "}";
         if(pt.phase == 1)
             return String("{\"t\":\"werewolf\",\"phase\":\"countdown\",\"sec\":") +
                    partyCountdownSec(pt) + "}";
         if(pt.phase == 4)
             return String("{\"t\":\"werewolf\",\"phase\":\"final\",\"you\":") + pid +
-                   ",\"winner\":\"" +
-                   (_ww.winner == WW_CUPID ? "lovers" : _ww.winner == WW_WOLF ? "wolves" : "villagers") +
+                   ",\"winner\":\"" + (_ww.winner == WW_WOLF ? "wolves" : "villagers") +
                    "\",\"myrole\":" + _ww.role[pid] + ",\"players\":" + wwRosterJson(pid) +
                    ",\"log\":" + wwLogJson() + ",\"board\":" + triviaBoard() + "}";
 
@@ -7406,12 +7315,6 @@ private:
                    ",\"myrole\":" + _ww.role[pid] +
                    ",\"alive\":" + (_ww.alive[pid] ? "true" : "false") +
                    ",\"wolvesleft\":" + wwAliveWolves() + ",\"villagersleft\":" + wwAliveVillage() +
-                   ",\"narrator\":" + _wwNarrator +
-                   ",\"castseer\":" + (_ww.castSeer ? "true" : "false") +
-                   ",\"castdoc\":" + (_ww.castDoctor ? "true" : "false") +
-                   ",\"casthunter\":" + (_ww.castHunter ? "true" : "false") +
-                   ",\"castwitch\":" + (_ww.castWitch ? "true" : "false") +
-                   ",\"castcupid\":" + (_ww.castCupid ? "true" : "false") +
                    ",\"players\":" + wwRosterJson(pid);
 
         if(_ww.stage == WW_S_NIGHT) {
@@ -7450,41 +7353,6 @@ private:
                 s += _ww.docTarget;
                 s += ",\"lastguard\":";
                 s += _ww.docLast;
-            }
-            // Each of the three added roles sees only its own state, for the same reason
-            // the pack tally is wolves-only: a villager's payload must carry no trace
-            // that any of this is happening.
-            if(_ww.role[pid] == WW_HUNTER && _ww.alive[pid]) {
-                s += ",\"mymark\":";
-                s += (int)_ww.hunterMark;
-            }
-            if(_ww.role[pid] == WW_WITCH && _ww.alive[pid]) {
-                s += ",\"mysave\":";
-                s += (int)_ww.witchSave;
-                s += ",\"mypoison\":";
-                s += (int)_ww.witchKill;
-                s += ",\"savegone\":";
-                s += _ww.witchSaveGone ? "true" : "false";
-                s += ",\"poisongone\":";
-                s += _ww.witchKillGone ? "true" : "false";
-            }
-            if(_ww.role[pid] == WW_CUPID && _ww.alive[pid]) {
-                s += ",\"tiedA\":";
-                s += _ww.loveA;
-                s += ",\"tiedB\":";
-                s += _ww.loveB;
-            }
-        }
-        // Being in love is not a role and does not reveal the other's: each lover is told
-        // only who they are tied to, and only in their own payload.
-        if(_ww.loveA && (pid == _ww.loveA || pid == _ww.loveB)) {
-            uint8_t other = (pid == _ww.loveA) ? _ww.loveB : _ww.loveA;
-            if(_p[other].used) {
-                s += ",\"lover\":{\"pid\":";
-                s += other;
-                s += ",\"nick\":\"";
-                s += ha_json_escape(_p[other].nick);
-                s += "\"}";
             }
         }
         // The seer's reading, from the moment they look until the next night falls
@@ -7663,6 +7531,11 @@ private:
         if(pt.round >= SPYFALL_ROUNDS || pk.count == 0 ||
            connectedCount() < SPYFALL_MIN_PLAYERS) {
             pt.phase = 4; // final
+            // Spyfall is the one game that can end MID-session, when players drop below the
+            // minimum. Those rounds were really played and really paid, so they still count
+            // -- round > 0 keeps out the empty-pack bail. The headcount test only guards the
+            // degenerate case of one player left, who has beaten nobody anyway.
+            if(pt.round > 0 && connectedCount() >= 2) awardContest();
             pushAll();
             return;
         }
@@ -7715,7 +7588,7 @@ private:
     bool spyfallAllSeen() {
         int n = 0;
         for(uint8_t i = 1; i <= HA_MAX_PLAYERS; i++) {
-            if(!_p[i].used || !_sf.inRound[i] || playerAway(i)) continue;
+            if(!_p[i].used || !_sf.inRound[i]) continue;
             n++;
             if(!_sf.seen[i]) return false;
         }
@@ -7799,8 +7672,8 @@ private:
         uint8_t start = _sf.nominator, pick = 0;
         for(int step = 1; step <= HA_MAX_PLAYERS; step++) {
             uint8_t i = (uint8_t)(((start + step - 1) % HA_MAX_PLAYERS) + 1);
-            if(_p[i].used && _sf.inRound[i] && !_sf.nominated[i] && !playerAway(i)) {
-                pick = i; // a held seat does not get a nomination turn to burn
+            if(_p[i].used && _sf.inRound[i] && !_sf.nominated[i]) {
+                pick = i;
                 break;
             }
         }
@@ -7965,6 +7838,7 @@ private:
         if(pt.phase == 1) {
             if(partyCountdownDone(pt, now)) {
                 pt.round = 0;
+                resetScoresAll(); // fresh session (see spectrumTick)
                 _sf.pack = (uint8_t)spyfallWinningPack();
                 _sf.spySeq = (decltype(_sf.spySeq))esp_random();
                 _sf.locSeq = (decltype(_sf.locSeq))esp_random();
@@ -8359,17 +8233,12 @@ private:
 
     // Undo drops the last segment of your own panel. Pushed (unlike a stroke, which is
     // silent) so the ink bar's authoritative `used` follows it back down.
-    // `count` segments back, not one: the client sends the length of the pen stroke it
-    // just took off its own copy, so both ends drop the same thing. Clamped here because
-    // the count arrives from a phone.
-    void fdUndo(uint8_t pid, int count) {
+    void fdUndo(uint8_t pid) {
         if(_active != HA_GAME_FRANKENDRAW || _fd.pt.phase != 2) return;
         int s = fdSheetOf(pid);
         if(s < 0 || _fd.done[pid]) return;
         uint8_t& n = _fdSheets[s].n[_fd.pt.round - 1];
-        if(count < 1) count = 1;
-        if(count > (int)n) count = (int)n;
-        n = (uint8_t)(n - count);
+        if(n) n--;
         pushAll();
     }
 
@@ -8379,7 +8248,7 @@ private:
         int drawing = 0;
         for(int k = 0; k < _fd.seats; k++) {
             uint8_t pid = _fd.seat[k];
-            if(!pid || !_p[pid].used || playerAway(pid)) continue;
+            if(!pid || !_p[pid].used) continue;
             drawing++;
             if(!_fd.done[pid]) return false;
         }
@@ -8476,6 +8345,9 @@ private:
             return;
         }
         _fd.pt.phase = 4;
+        // The gallery has walked every sheet and fdTally() has counted the thumbs, so this
+        // is the podium. The seats == 0 bail in fdGalleryStart never reaches here.
+        awardContest();
         pushAll();
     }
 
