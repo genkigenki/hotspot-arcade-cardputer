@@ -18,6 +18,6 @@ Thumbs.db
 # junk from a crashed tool
 *.stackdump
 
-# Local working notes, never published
-docs/HANDOVER.md
-docs/HANDOVER2.md
+# Local working notes, never published. A glob, not a list: the numbered ones kept
+# arriving one at a time and the third slipped past an explicit list.
+docs/HANDOVER*.md
